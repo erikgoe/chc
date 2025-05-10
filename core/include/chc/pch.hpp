@@ -39,6 +39,8 @@ using f32 = float;
 using f64 = double;
 
 using String = std::string;
+template<typename T>
+using Opt = std::optional<T>;
 using size_t = std::size_t;
 
 using std::stod;

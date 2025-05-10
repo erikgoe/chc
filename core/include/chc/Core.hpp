@@ -1,5 +1,7 @@
 #pragma once
 #include "pch.hpp"
+#include "Iterator.hpp"
+#include "Message.hpp"
 
 namespace chc {
 
@@ -12,6 +14,9 @@ struct CompilerConf {
 /// General compilation state.
 struct CompilerState {
     i8 ret_code = 0;
+
+    std::vector<Message> messages;
+    bool success = true;
 };
 
 /// The main class of the compiler.

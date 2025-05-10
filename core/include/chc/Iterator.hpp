@@ -73,7 +73,7 @@ public:
     }
 
     /// Is for consume(), what get_or() is for get().
-    const T &consume_or( T &alternative ) {
+    const T &consume_or( const T &alternative ) {
         auto &ret = curr();
         skip_self( 1 );
         if ( ret.has_value() ) {
@@ -353,6 +353,12 @@ public:
         } );
     }
 
+    /// Inserts all elements of this iterator into a container.
+    template <typename U>
+    void collect( U &out ) const {
+        for_each( [&]( const T &e ) { out.push_back( e ); } );
+    }
+
     /// Match against the current element of this iterator. U must overload
     /// operator bool.
     template <typename U>
@@ -379,8 +385,7 @@ public:
     }
     explicit operator bool() const { return curr_valid(); }
     bool operator==( const LazyIterator<T> other ) const {
-        return state == other.state && idx == other.idx &&
-               limit == other.limit;
+        return state == other.state && idx == other.idx && limit == other.limit;
     }
     bool operator!=( const LazyIterator<T> other ) const {
         return !( *this == other );
