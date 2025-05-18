@@ -41,6 +41,8 @@ using f64 = double;
 using String = std::string;
 template<typename T>
 using Opt = std::optional<T>;
+template<typename T>
+using Sptr = std::shared_ptr<T>;
 using size_t = std::size_t;
 
 using std::stod;

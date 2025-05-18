@@ -41,12 +41,15 @@ String generate_message_string( const Message &mes,
     // Calculate ln & col
     size_t ln = 1;
     size_t col = 1;
+    size_t line_idx = 0;
 
     for ( size_t i = 0; i < clean_str.size() && i < mes.ifi.offset; i++ ) {
         char c = clean_str[i];
         if ( c == '\n' ) {
             ++ln;
             col = 1;
+            if ( i < mes.ifi.offset )
+                line_idx = i + 1;
         } else {
             ++col;
         }
@@ -64,14 +67,17 @@ String generate_message_string( const Message &mes,
         mes_text = "Unknown message";
     }
     mes_text += " at " + to_string( ln ) + ":" + to_string( col ) + ": " +
-                mes.message + ".\n";
+                mes.message + "\n";
 
     // Generate code line
-    String code_line = to_string( ln ) + " | " +
-                       clean_str.substr( mes.ifi.offset, mes.ifi.size ) + "\n";
+    String code_line =
+        to_string( ln ) + " | " +
+        clean_str.substr( line_idx,
+                          clean_str.find( '\n', line_idx ) - line_idx ) +
+        "\n";
 
     // Generate underline
-    String underline = String( to_string( ln ).size() + 3 + col, ' ' ) +
+    String underline = String( to_string( ln ).size() + 3 + col - 1, ' ' ) +
                        String( mes.ifi.size, '~' );
 
     // Return full message

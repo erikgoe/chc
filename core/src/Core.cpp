@@ -1,5 +1,7 @@
 #include "../include/chc/Core.hpp"
 #include "../include/chc/Lexer.hpp"
+#include "../include/chc/Parser.hpp"
+#include "../include/chc/SemanticAnalyzer.hpp"
 
 namespace chc {
 
@@ -13,6 +15,13 @@ void Core::compile() {
 
         // Compile TODO
         auto lexer = make_lexer( state, file_content );
+        if ( state.success ) {
+            auto root = make_parser( state, lexer );
+            if ( state.success ) {
+                operator_transformation( state, root );
+                basic_semantic_checks( state, root );
+            }
+        }
 
         // Print messages
         for ( auto &m : state.messages ) {

@@ -35,11 +35,11 @@ bool is_merged_operator( const String &s ) {
     return s == "+=" || s == "-=" || s == "*=" || s == "/=" || s == "%=";
 }
 
-LazyIterator<Token> make_lexer( CompilerState &state, const String &text ) {
-    size_t text_gen_idx = 0;
-    LazyIterator<char> txt_raw( [&]() -> Opt<char> {
-        if ( text_gen_idx < text.size() ) {
-            return text[text_gen_idx++];
+EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
+    EagerContainer<char> txt_raw;
+    txt_raw.fill( [&]( size_t idx ) -> Opt<char> {
+        if ( idx < text.size() ) {
+            return text[idx];
         } else {
             return {};
         }
@@ -47,22 +47,16 @@ LazyIterator<Token> make_lexer( CompilerState &state, const String &text ) {
 
     // Replace tabs
     String txt_clean_backlog;
-    LazyIterator<char> txt_clean( [&]() -> Opt<char> {
-        if ( !txt_clean_backlog.empty() ) {
-            char r = txt_clean_backlog.front();
-            txt_clean_backlog = txt_clean_backlog.substr( 1 );
-            return r;
-        }
-
-        if ( txt_raw.curr_not_valid() )
-            return {};
-        auto c = txt_raw.consume();
+    EagerContainer<char> txt_clean;
+    txt_raw.for_each( [&]( const char &c ) {
         if ( c == '\t' ) {
-            txt_clean_backlog += "   ";
-            return ' ';
+            txt_clean.put( ' ' );
+            txt_clean.put( ' ' );
+            txt_clean.put( ' ' );
+            txt_clean.put( ' ' );
+        } else {
+            txt_clean.put( c );
         }
-
-        return c;
     } );
 
     // Insert position info
@@ -76,118 +70,132 @@ LazyIterator<Token> make_lexer( CompilerState &state, const String &text ) {
     } );
 
     // Unify newlines
-    LazyIterator<FatChar> txt_clean_newlines( [&]() -> Opt<FatChar> {
-        if ( txt_fat.curr_not_valid() )
-            return {};
-        auto fc = txt_fat.consume();
+    EagerContainer<FatChar> txt_clean_newlines;
+    auto itr = txt_fat.itr();
+    while ( itr ) {
+        auto fc = itr.consume();
 
         if ( fc.c == '\r' ) {
-            if ( txt_fat.skip().consume_or( FatChar{ {}, 0 } ).c == '\n' ) {
+            if ( itr.skip().consume_or( FatChar{ {}, 0 } ).c == '\n' ) {
                 // Windows-style newlines
-                txt_fat.consume();
-                return FatChar{ InFileInfo{ fc.ifi.offset, 2 }, '\n' };
+                itr.consume();
+                txt_clean_newlines.put(
+                    FatChar{ InFileInfo{ fc.ifi.offset, 2 }, '\n' } );
             } else {
-                return FatChar{ fc.ifi, '\n' };
+                txt_clean_newlines.put( FatChar{ fc.ifi, '\n' } );
             }
         } else {
-            return fc;
+            txt_clean_newlines.put( fc );
         }
-    } );
+    }
 
-    // Handle comments a strings
-    LazyIterator<Token> txt_with_strings( [&]() -> Opt<Token> {
-        if ( txt_clean_newlines.curr_not_valid() )
-            return {};
-        auto fc0 = txt_clean_newlines.consume();
-        auto fc1 = txt_clean_newlines.get_or( FatChar{ {}, 0 } );
+
+    // Handle comments and strings
+    EagerContainer<Token> txt_with_strings;
+    itr = txt_clean_newlines.itr();
+    while ( itr ) {
+        auto fc0 = itr.consume();
+        auto fc1 = itr.get_or( FatChar{ {}, 0 } );
 
         InFileInfo ifi = fc0.ifi;
         if ( fc0.c == '/' ) {
             if ( fc1.c == '/' ) {
                 // Line comment
-                txt_clean_newlines.consume(); // second '/'
+                itr.consume(); // second '/'
                 ++ifi.size;
                 while ( true ) {
-                    fc0 = txt_clean_newlines.consume_or( FatChar{ {}, '\n' } );
+                    fc0 = itr.consume_or( FatChar{ {}, '\n' } );
                     ++ifi.size;
                     if ( fc0.c == '\n' )
                         break;
                 }
-                return Token{ Token::Type::None, " ",
-                              ifi }; // Replace with single space.
+                txt_with_strings.put(
+                    Token{ Token::Type::None, " ",
+                           ifi } ); // Replace with single space.
+                continue;
             } else if ( fc1.c == '*' ) {
                 // Block comment
-                txt_clean_newlines.consume(); // '*'
+                itr.consume(); // '*'
                 ++ifi.size;
                 size_t nest_counter = 1; // Count nested block comments.
                 while ( true ) {
-                    fc0 = txt_clean_newlines.consume_or( FatChar{ {}, '*' } );
+                    fc0 = itr.consume_or( FatChar{ {}, '*' } );
                     ++ifi.size;
-                    fc1 = txt_clean_newlines.get_or( FatChar{ {}, '/' } );
+                    fc1 = itr.get_or( FatChar{ {}, '/' } );
                     if ( fc0.c == '*' && fc1.c == '/' ) {
                         --nest_counter;
-                        txt_clean_newlines.consume(); // '/'
+                        itr.consume(); // '/'
                         ++ifi.size;
                     } else if ( fc0.c == '/' && fc1.c == '*' ) {
                         ++nest_counter;
-                        txt_clean_newlines.consume(); // '*'
+                        itr.consume(); // '*'
                         ++ifi.size;
                     }
                     if ( nest_counter == 0 )
                         break;
                 }
-                return Token{ Token::Type::None, " ",
-                              ifi }; // Replace with single space.
+                txt_with_strings.put(
+                    Token{ Token::Type::None, " ",
+                           ifi } ); // Replace with single space.
+                continue;
             }
             // TODO strings are not specified yet in L1!
             //} else if ( fc0.c == '"' ) {
             //    // Strings
             //    String content;
             //    while ( true ) {
-            //        fc0 = txt_clean_newlines.consume_or( FatChar{ {}, '"' } );
+            //        fc0 = itr.consume_or( FatChar{ {}, '"' } );
             //        ++ifi.size;
             //        // TODO handle escape characters
             //        if ( fc0.c == '"' )
             //            break;
             //        content += fc0.c;
             //    }
-            //    return Token{ Token::Type::String, content,
+            //    txt_with_strings.put( Token{ Token::Type::String, content,
             //                  ifi }; // Produce string token.
         }
 
         // Other cases pass on normal characters
-        return Token{ Token::Type::None, String( 1, fc0.c ), fc0.ifi };
-    } );
+        txt_with_strings.put(
+            Token{ Token::Type::None, String( 1, fc0.c ), fc0.ifi } );
+    };
 
     // Merge characters into tokens
-    LazyIterator<Token> txt_separated( [&]() -> Opt<Token> {
-        if ( txt_with_strings.curr_not_valid() )
-            return {};
-        auto t0 = txt_with_strings.consume();
-        auto t1 =
-            txt_with_strings.get_or( Token{ Token::Type::None, "\n", {} } );
+    EagerContainer<Token> txt_tokenized;
+    auto tok_itr = txt_with_strings.itr();
+    while ( tok_itr ) {
+        if ( tok_itr.curr_not_valid() ) {
+            txt_tokenized.put( {} );
+            continue;
+        }
+        auto t0 = tok_itr.consume();
+        auto t1 = tok_itr.get_or( Token{ Token::Type::None, "\n", {} } );
 
-        if ( t0.type != Token::Type::None )
-            return t0; // Already categorized token, e g. strings.
+        if ( t0.type != Token::Type::None ) {
+            // Already categorized token, e g. strings.
+            txt_tokenized.put( t0 );
+            continue;
+        }
 
         if ( t0.content == "0" ) {
             if ( t1.content == "x" || t1.content == "X" ) {
                 // Potential hex integer
-                auto t2 = txt_with_strings.skip( 1 ).get_or(
+                auto t2 = tok_itr.skip( 1 ).get_or(
                     Token{ Token::Type::None, "\n", {} } );
                 if ( is_hex_int_token( t2.content ) ) {
                     // Is a valid hex integer => Consume whole value.
                     Token tok{ Token::Type::HexInteger, "", t0.ifi };
-                    txt_with_strings.consume(); // "x"
+                    tok_itr.consume(); // "x"
                     ++tok.ifi.size; // "x"
                     while ( is_hex_int_token( t2.content ) ) {
-                        txt_with_strings.consume();
+                        tok_itr.consume();
                         tok.content += t2.content;
                         ++tok.ifi.size;
-                        t2 = txt_with_strings.get_or(
+                        t2 = tok_itr.get_or(
                             Token{ Token::Type::None, "\n", {} } );
                     }
-                    return tok;
+                    txt_tokenized.put( tok );
+                    continue;
                 } else {
                     // TODO
                     // For now just fall through
@@ -195,53 +203,52 @@ LazyIterator<Token> make_lexer( CompilerState &state, const String &text ) {
             }
 
             // Must be the integer 0
-            return Token{ Token::Type::DecInteger, "0", t0.ifi };
+            txt_tokenized.put( Token{ Token::Type::DecInteger, "0", t0.ifi } );
         } else if ( is_dec_int_token( t0.content ) ) {
             // Is an integer (but not 0)
             Token tok = t0;
             tok.type = Token::Type::DecInteger;
-            t0 =
-                txt_with_strings.get_or( Token{ Token::Type::None, "\n", {} } );
+            t0 = tok_itr.get_or( Token{ Token::Type::None, "\n", {} } );
             while ( is_dec_int_token( t0.content ) ) {
-                txt_with_strings.consume();
+                tok_itr.consume();
                 tok.content += t0.content;
                 ++tok.ifi.size;
-                t0 = txt_with_strings.get_or(
-                    Token{ Token::Type::None, "\n", {} } );
+                t0 = tok_itr.get_or( Token{ Token::Type::None, "\n", {} } );
             }
-            return tok;
+            txt_tokenized.put( tok );
         } else if ( is_ident_start_token( t0.content ) ) {
             // Identifier
             Token tok = t0;
             tok.type = Token::Type::Identifier;
-            t0 =
-                txt_with_strings.get_or( Token{ Token::Type::None, "\n", {} } );
+            t0 = tok_itr.get_or( Token{ Token::Type::None, "\n", {} } );
             while ( is_ident_token( t0.content ) ) {
-                txt_with_strings.consume();
+                tok_itr.consume();
                 tok.content += t0.content;
                 ++tok.ifi.size;
-                t0 = txt_with_strings.get_or(
-                    Token{ Token::Type::None, "\n", {} } );
+                t0 = tok_itr.get_or( Token{ Token::Type::None, "\n", {} } );
             }
-            return tok;
+            txt_tokenized.put( tok );
         } else if ( is_operator_token( t0.content ) ) {
             if ( is_merged_operator( t0.content + t1.content ) ) {
                 // Double-char operator
-                txt_with_strings.consume(); // second operator
-                return Token{ Token::Type::Operator, t0.content + t1.content,
-                              t0.ifi.merge( t1.ifi ) };
+                tok_itr.consume(); // second operator
+                txt_tokenized.put( Token{ Token::Type::Operator,
+                                          t0.content + t1.content,
+                                          t0.ifi.merge( t1.ifi ) } );
             } else {
                 // Single-char operator
-                return Token{ Token::Type::Operator, t0.content, t0.ifi };
+                txt_tokenized.put(
+                    Token{ Token::Type::Operator, t0.content, t0.ifi } );
             }
         } else if ( t0.content == " " || t0.content == "\n" ) {
             // Whitespace character
-            return Token{ Token::Type::Whitespace, t0.content, t0.ifi };
+            txt_tokenized.put(
+                Token{ Token::Type::Whitespace, t0.content, t0.ifi } );
         } else {
-            make_error_msg( state, "Forbidden character", t0.ifi );
-            return {};
+            make_error_msg( state, "Forbidden character.", t0.ifi );
+            txt_tokenized.put( {} );
         }
-    } );
+    }
 
     // Detect keywords
     std::set<String> keywords = { "struct",  "if",       "else",  "while",
@@ -250,25 +257,20 @@ LazyIterator<Token> make_lexer( CompilerState &state, const String &text ) {
                                   "print",   "read",     "alloc", "alloc_array",
                                   "int",     "bool",     "void ", " char ",
                                   " string " };
-    LazyIterator<Token> txt_with_kw( [&, keywords]() -> Opt<Token> {
-        if ( txt_separated.curr_not_valid() )
-            return {};
-        auto t0 = txt_separated.consume();
-        if ( keywords.find( t0.content ) != keywords.end() )
-            t0.type = Token::Type::Keyword;
-        return t0;
-    } );
+    EagerContainer<Token> txt_with_kw =
+        txt_tokenized.map<Token>( [keywords]( const Token &tok ) {
+            auto ret = tok;
+            if ( keywords.find( ret.content ) != keywords.end() )
+                ret.type = Token::Type::Keyword;
+            return ret;
+        } );
 
     // Remove whitespace
-    LazyIterator<Token> txt_no_ws = txt_with_kw.filter( []( const Token &t ) {
-        return t.type != Token::Type::Whitespace;
-    } );
-
-    // Populate iterator cache (to circumvent iterator invalidation)
-    txt_no_ws.end();
+    EagerContainer<Token> txt_no_ws = txt_with_kw.filter(
+        []( const Token &t ) { return t.type != Token::Type::Whitespace; } );
 
     // DEBUG
-    if(true) {
+    if ( false ) {
         txt_no_ws.for_each( []( auto &&t ) {
             log( "Token " + to_string( (u32) t.type ) + ": " + t.content );
         } );
