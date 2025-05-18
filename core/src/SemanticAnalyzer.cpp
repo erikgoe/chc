@@ -1,6 +1,6 @@
 #include "../include/chc/Parser.hpp"
 #include "../include/chc/Message.hpp"
-#include "../include/chc/AstNodeWrapper.hpp"
+#include "../include/chc/AstNodeFacades.hpp"
 #include "../include/chc/ParserUtils.hpp"
 #include "../include/chc/Core.hpp"
 
@@ -8,6 +8,8 @@ namespace chc {
 
 using AT = AstNode::Type;
 using AstItr = EagerContainer<AstNode>::Iterator;
+
+using namespace AstNodeFacades;
 
 struct SymbolDecl {
     SymbolId id;
@@ -62,7 +64,6 @@ Opt<String> find_similar_symbol(
     return best_match.empty() ? Opt<String>{} : best_match;
 }
 
-using namespace AstNodeFacades;
 
 void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
     std::unordered_map<String, SymbolDecl> symbol_map;

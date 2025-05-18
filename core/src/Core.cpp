@@ -2,6 +2,7 @@
 #include "../include/chc/Lexer.hpp"
 #include "../include/chc/Parser.hpp"
 #include "../include/chc/SemanticAnalyzer.hpp"
+#include "../include/chc/Mir.hpp"
 
 namespace chc {
 
@@ -20,6 +21,9 @@ void Core::compile() {
             if ( state.success ) {
                 operator_transformation( state, root );
                 basic_semantic_checks( state, root );
+            }
+            if ( state.success ) {
+                auto mir = construct_mir( state, root );
             }
         }
 

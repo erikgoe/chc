@@ -8,5 +8,6 @@
 #include "src/Lexer.cpp"
 #include "src/Parser.cpp"
 #include "src/SemanticAnalyzer.cpp"
+#include "src/Mir.cpp"
 
 #endif
