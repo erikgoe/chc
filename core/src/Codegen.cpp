@@ -20,7 +20,7 @@ syscall
 _main:)";
 
 void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
-    RegId stack_start_reg = 12;
+    RegId stack_start_reg = 10;
     bool r10_curr_used =
         false; // whether r10 is already used for stack variables.
 
@@ -58,16 +58,12 @@ void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
             case 5:
                 return "%r9";
             case 6:
-                return "%r10";
-            case 7:
-                return "%r11";
-            case 8:
                 return "%r12";
-            case 9:
+            case 7:
                 return "%r13";
-            case 10:
+            case 8:
                 return "%r14";
-            case 11:
+            case 9:
                 return "%r15";
             default:
                 return "%noreg";

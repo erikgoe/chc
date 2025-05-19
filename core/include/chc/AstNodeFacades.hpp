@@ -232,7 +232,7 @@ public:
     IntConst( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::IntConst;
         if ( matches ) {
-            value = stoi( to_wrap.tok->content );
+            value = stoul( to_wrap.tok->content );
         }
     }
 

@@ -130,23 +130,33 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     // Translation into raw AstNodes
     AstCont raw_nodes = tokens.map<AstNode>( [&state]( const Token &t ) {
         if ( t.type == TT::DecInteger ) {
-            u64 value = stoull( t.content );
-            Token new_t = t;
-            if ( value == 1ull << 31 ) {
-                // Modulo arithmetic
-                new_t.content = "-" + t.content; // This should work...
-            } else if ( value > 1ull << 31 ) {
-                make_error_msg( state,
-                                "Decimal constant does not fit into 32 bit.",
-                                t.ifi, RetCode::SyntaxError );
+            try {
+                u64 value = stoull( t.content );
+                Token new_t = t;
+                if ( value == 1ull << 31 ) {
+                    // Modulo arithmetic
+                    new_t.content = "-" + t.content; // This should work...
+                } else if ( value > 1ull << 31 ) {
+                    make_error_msg(
+                        state, "Decimal constant does not fit into 32 bit.",
+                        t.ifi, RetCode::SyntaxError );
+                }
+            } catch ( ... ) {
+                make_error_msg( state, "Invalid decimal constant.", t.ifi,
+                                RetCode::SyntaxError );
             }
             return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
         } else if ( t.type == TT::HexInteger ) {
-            u64 value = stoull( t.content );
-            if ( value > 0xffffffffull ) {
-                make_error_msg(
-                    state, "Hexadecimal constant does not fit into 32 bit.",
-                    t.ifi, RetCode::SyntaxError );
+            try {
+                u64 value = stoull( t.content );
+                if ( value > 0xffffffffull ) {
+                    make_error_msg(
+                        state, "Hexadecimal constant does not fit into 32 bit.",
+                        t.ifi, RetCode::SyntaxError );
+                }
+            } catch ( ... ) {
+                make_error_msg( state, "Invalid hexadecimal constant.", t.ifi,
+                                RetCode::SyntaxError );
             }
             return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
             // TODO strings not yet implemented
