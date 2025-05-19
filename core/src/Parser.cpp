@@ -237,6 +237,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    itr.skip_self( -1 );
                 }
             }
         } );
@@ -257,6 +258,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    itr.skip_self( -1 );
                 }
             }
         } );
@@ -281,6 +283,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::Simp, *op.tok, { lhs, rhs } );
+                    itr.skip_self( -1 );
                 }
             }
         } );
