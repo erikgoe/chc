@@ -130,35 +130,38 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     // Translation into raw AstNodes
     AstCont raw_nodes = tokens.map<AstNode>( [&state]( const Token &t ) {
         if ( t.type == TT::DecInteger ) {
+            auto new_t = t;
             try {
-                u64 value = stoull( t.content );
-                Token new_t = t;
+                u64 value = stoull( new_t.content );
                 if ( value == 1ull << 31 ) {
                     // Modulo arithmetic
                     new_t.content = "-" + t.content; // This should work...
                 } else if ( value > 1ull << 31 ) {
                     make_error_msg(
                         state, "Decimal constant does not fit into 32 bit.",
-                        t.ifi, RetCode::SyntaxError );
+                        t.ifi, RetCode::SemanticError );
                 }
             } catch ( ... ) {
-                make_error_msg( state, "Invalid decimal constant.", t.ifi,
-                                RetCode::SyntaxError );
+                make_error_msg( state, "Invalid decimal constant.", new_t.ifi,
+                                RetCode::SemanticError );
             }
-            return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
+            return AstNode{ AT::IntConst, {}, new_t, {}, new_t.ifi };
         } else if ( t.type == TT::HexInteger ) {
+            auto new_t = t;
+
             try {
-                u64 value = stoull( t.content );
+                u64 value = stoull( new_t.content, 0, 16 );
                 if ( value > 0xffffffffull ) {
                     make_error_msg(
                         state, "Hexadecimal constant does not fit into 32 bit.",
-                        t.ifi, RetCode::SyntaxError );
+                        new_t.ifi, RetCode::SemanticError );
                 }
+                new_t.content = to_string( value ); // Weird, but works
             } catch ( ... ) {
                 make_error_msg( state, "Invalid hexadecimal constant.", t.ifi,
-                                RetCode::SyntaxError );
+                                RetCode::SemanticError );
             }
-            return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
+            return AstNode{ AT::IntConst, {}, new_t, {}, new_t.ifi };
             // TODO strings not yet implemented
             //}else if(t.type == TT::String){
             //    return AstNode{ AT::String, {}, t, {}, t.ifi };
