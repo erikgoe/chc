@@ -140,6 +140,7 @@ public:
                   to_wrap.nodes->first()->get().type == AstNode::Type::Simp;
         if ( matches ) {
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
+            // TODO check that parenthesis has only one subnode
             lvalue = unwrap_paren( itr.get() );
             value = itr.skip( 1 ).get();
             auto &type_str = to_wrap.nodes->first()->get().tok->content;

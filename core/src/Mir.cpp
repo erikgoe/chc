@@ -36,7 +36,8 @@ String name_of_instr( Mir::MirInstr::Type type ) {
     }
 }
 
-void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
+void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
+                      Mir::VarId into_var ) {
     using MI = Mir::MirInstr;
     using MT = Mir::MirInstr::Type;
     using VarId = Mir::VarId;
@@ -45,17 +46,17 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
         // TODO params
         auto itr = fn_def.stmts.itr();
         while ( itr ) {
-            write_mir_instr( mir, itr.get(), mir.next_var++ );
+            write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
         }
     } else if ( auto ret = RetStmt( node ) ) {
         VarId tmp = mir.next_var++;
-        write_mir_instr( mir, ret.value, tmp );
-        mir.instrs.put( MI{ MT::Ret, tmp, 0, 0, 0, node.ifi } );
+        write_mir_instr( state, mir, ret.value, tmp );
+        mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
     } else if ( auto decl = DeclStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id.value()] = variable;
-        write_mir_instr( mir, decl.init, variable );
+        write_mir_instr( state, mir, decl.init, variable );
     } else if ( auto decl = DeclUninitStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id.value()] = variable;
@@ -63,18 +64,21 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
         VarId variable = mir.var_map[stmt.lvalue.symbol_id.value()];
-        write_mir_instr( mir, stmt.value, variable );
+        write_mir_instr( state, mir, stmt.value, variable );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id.value()];
         mir.instrs.put( MI{ MT::Mov, into_var, variable, 0, 0, node.ifi } );
     } else if ( auto paren = Paren( node ) ) {
-        // TODO need to check that paren contains only one element
+        if ( paren.children.length() != 1 ) {
+            make_error_msg( state, "Expected only one element in parenthesis.",
+                            node.ifi );
+        }
         auto child = paren.children.first()->get();
-        write_mir_instr( mir, child, into_var );
+        write_mir_instr( state, mir, child, into_var );
     } else if ( auto block = Block( node ) ) {
         auto itr = block.children.itr();
         while ( itr ) {
-            write_mir_instr( mir, itr.get(), mir.next_var++ );
+            write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
         }
     } else if ( auto int_const = IntConst( node ) ) {
@@ -83,8 +87,8 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
     } else if ( auto bin_op = BinOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
         VarId tmp_rhs = mir.next_var++;
-        write_mir_instr( mir, bin_op.lhs, tmp_lhs );
-        write_mir_instr( mir, bin_op.rhs, tmp_rhs );
+        write_mir_instr( state, mir, bin_op.lhs, tmp_lhs );
+        write_mir_instr( state, mir, bin_op.rhs, tmp_rhs );
         MT op = MT::None;
         if ( bin_op.type == ArithType::Add ) {
             op = MT::Add;
@@ -101,7 +105,7 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
     } else if ( auto uni_op = UniOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
         VarId tmp_rhs = mir.next_var++;
-        write_mir_instr( mir, uni_op.rhs, tmp_rhs );
+        write_mir_instr( state, mir, uni_op.rhs, tmp_rhs );
         if ( uni_op.type == ArithType::Neg ) {
             mir.instrs.put( MI{ MT::Const, tmp_lhs, 0, 0, 0, node.ifi } );
             mir.instrs.put(
@@ -113,7 +117,7 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
         while ( itr ) {
-            write_mir_instr( mir, itr.get(), mir.next_var++ );
+            write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
         }
     }
@@ -123,22 +127,19 @@ void write_mir_instr( Mir &mir, AstNode &node, Mir::VarId into_var ) {
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     Mir mir;
 
-    write_mir_instr( mir, root_node, mir.next_var++ );
+    write_mir_instr( state, mir, root_node, mir.next_var++ );
 
     // Check whether there are None ops TODO
 
     // DEBUG
     if ( true ) {
-        auto itr = mir.instrs.itr();
-        while ( itr ) {
-            Mir::MirInstr instr = itr.get();
+        mir.instrs.for_each( []( const Mir::MirInstr &instr ) {
             String str = name_of_instr( instr.type ) + " " +
                          to_string( instr.result ) + " " +
                          to_string( instr.p0 ) + " " + to_string( instr.p1 ) +
                          " c" + to_string( instr.imm );
-            itr.skip_self( 1 );
             olog( str );
-        }
+        } );
     }
 
 

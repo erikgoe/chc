@@ -24,6 +24,7 @@ void Core::compile() {
             }
             if ( state.success ) {
                 auto mir = construct_mir( state, root );
+                use_before_init_check( state, mir );
             }
         }
 

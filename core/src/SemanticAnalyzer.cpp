@@ -3,6 +3,7 @@
 #include "../include/chc/AstNodeFacades.hpp"
 #include "../include/chc/ParserUtils.hpp"
 #include "../include/chc/Core.hpp"
+#include "../include/chc/Mir.hpp"
 
 namespace chc {
 
@@ -249,6 +250,28 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
         };
         root_node.nodes->for_each( [&]( auto &&n ) { print_node( n, 0 ); } );
     }
+}
+
+using MI = Mir::MirInstr;
+using MT = Mir::MirInstr::Type;
+using VarId = Mir::VarId;
+
+void use_before_init_check( CompilerState &state, Mir &mir ) {
+    std::set<VarId> defs;
+
+    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+        if ( instr.p0 != 0 && defs.find( instr.p0 ) == defs.end() ) {
+            // p0 not defined
+            make_error_msg( state, "Using undefined variable", instr.ifi );
+        }
+        if ( instr.p1 != 0 && defs.find( instr.p1 ) == defs.end() ) {
+            // p0 not defined
+            make_error_msg( state, "Using undefined variable", instr.ifi );
+        }
+        if ( instr.result != 0 ) {
+            defs.insert( instr.result );
+        }
+    } );
 }
 
 } // namespace chc
