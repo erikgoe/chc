@@ -386,14 +386,14 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     if ( full_graph.length() != 1 || !full_graph.first().has_value() ||
          full_graph.first()->get().type != AT::FunctionDef ) {
         make_error_msg( state, "Expected single function at global scope.",
-                        InFileInfo{}, RetCode::SemanticError );
+                        InFileInfo{}, RetCode::SyntaxError );
         return {};
     }
     auto main_fn = full_graph.first()->get();
     if ( main_fn.nodes->first()->get().nodes->first()->get().tok->content !=
          "main" ) {
         make_error_msg( state, "Expected global function with name 'main'.",
-                        main_fn.ifi, RetCode::SemanticError );
+                        main_fn.ifi, RetCode::SyntaxError );
         return {};
     }
 
