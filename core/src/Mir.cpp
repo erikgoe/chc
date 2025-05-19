@@ -217,6 +217,14 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
         if ( r + 1 > mir.reg_count )
             mir.reg_count = r + 1;
     }
+
+    // DEBUG
+    if ( true ) {
+        log( "== MIR REGS ==" );
+        for ( auto p : mir.reg_mapping ) {
+            olog( to_string( p.first ) + " => " + to_string( p.second ) );
+        }
+    }
 }
 
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {
@@ -243,12 +251,6 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
                          " c" + to_string( instr.imm );
             olog( str );
         } );
-    }
-    if ( true ) {
-        log( "== MIR REGS ==" );
-        for ( auto p : mir.reg_mapping ) {
-            olog( to_string( p.first ) + " => " + to_string( p.second ) );
-        }
     }
 
     return mir;

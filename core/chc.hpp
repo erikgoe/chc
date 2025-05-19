@@ -9,5 +9,6 @@
 #include "src/Parser.cpp"
 #include "src/SemanticAnalyzer.cpp"
 #include "src/Mir.cpp"
+#include "src/Codegen.cpp"
 
 #endif
