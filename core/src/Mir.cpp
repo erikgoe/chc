@@ -6,6 +6,11 @@ namespace chc {
 
 using AT = AstNode::Type;
 using AstItr = EagerContainer<AstNode>::Iterator;
+using MI = Mir::MirInstr;
+using MT = Mir::MirInstr::Type;
+using VarId = Mir::VarId;
+using RegId = Mir::RegId;
+
 
 using namespace AstNodeFacades;
 
@@ -38,10 +43,6 @@ String name_of_instr( Mir::MirInstr::Type type ) {
 
 void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
-    using MI = Mir::MirInstr;
-    using MT = Mir::MirInstr::Type;
-    using VarId = Mir::VarId;
-
     if ( auto fn_def = FunctionDef( node ) ) {
         // TODO params
         auto itr = fn_def.stmts.itr();
@@ -123,16 +124,118 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     }
 }
 
+void analyze_liveness( CompilerState &state, Mir &mir ) {
+    auto itr = mir.instrs.end();
+    while ( itr != mir.instrs.begin() ) {
+        itr.skip_self( -1 );
+        auto &instr = itr.get();
+        auto next = itr.skip( 1 ).get_or( MI{} );
+        if ( instr.p0 != 0 ) {
+            instr.life.insert( instr.p0 );
+        }
+        if ( instr.p1 != 0 ) {
+            instr.life.insert( instr.p1 );
+        }
+        for ( auto &v : next.life ) {
+            if ( v != instr.result ) {
+                instr.life.insert( v );
+            }
+        }
+        // TODO does not account for jumps yet! Needs another "successor"
+        // detection pass. Then this can instead be implemented as forward pass.
+    }
+}
+
+void create_inference_graph(
+    CompilerState &state, Mir &mir,
+    std::map<VarId, std::set<VarId>> &inference_graph ) {
+    // Every pair is included twice, because it is an undirected graph.
+    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+        for ( auto v0 : instr.life ) {
+            for ( auto v1 : instr.life ) {
+                if ( v0 != v1 )
+                    inference_graph[v0].insert( v1 );
+            }
+        }
+    } );
+}
+
+void create_simplicial_elimination_ordering(
+    CompilerState &state, Mir &mir,
+    const std::map<VarId, std::set<VarId>> &inference_graph,
+    std::vector<VarId> &ordering ) {
+    std::map<VarId, size_t> wv; // Weighted vertices TODO use make_heap
+    for ( size_t i = 0; i < mir.next_var; i++ )
+        wv[i] = 0; // Populate wv
+    ordering.reserve( wv.size() );
+
+    // Construct ordering
+    while ( !wv.empty() ) {
+        auto max_v_itr = std::max_element(
+            wv.begin(), wv.end(),
+            []( auto &&a, auto &&b ) { return a.second < b.second; } );
+        ordering.push_back( max_v_itr->first );
+
+        // Increment weight of remaining neighbors (if there are any)
+        if ( inference_graph.find( max_v_itr->first ) !=
+             inference_graph.end() ) {
+            for ( auto neighbor : inference_graph.at( max_v_itr->first ) ) {
+                if ( wv.find( neighbor ) != wv.end() )
+                    ++wv[neighbor];
+            }
+        }
+
+        wv.erase( max_v_itr );
+    }
+}
+
+void create_register_mapping( CompilerState &state, Mir &mir ) {
+    std::map<VarId, std::set<VarId>> inference_graph;
+    std::vector<VarId> ordering;
+    create_inference_graph( state, mir, inference_graph );
+    create_simplicial_elimination_ordering( state, mir, inference_graph,
+                                            ordering );
+
+    // Greedy register allocation
+    std::set<RegId> avail; // Currently available registers
+    RegId next_reg = 0;
+    for ( size_t i = 0; i < ordering.size(); i++ ) {
+        auto v = ordering[i];
+        auto &neighbors = inference_graph[v];
+
+        // Find smallest register (color) which no other neighbor uses
+        RegId r = 0;
+        while (
+            std::find_if( neighbors.begin(), neighbors.end(), [&]( auto &&n ) {
+                return mir.reg_mapping.find( n ) != mir.reg_mapping.end() &&
+                       mir.reg_mapping[n] == r;
+            } ) != neighbors.end() ) {
+            ++r;
+        }
+
+        mir.reg_mapping[v] = r;
+        if ( r + 1 > mir.reg_count )
+            mir.reg_count = r + 1;
+    }
+}
 
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     Mir mir;
 
     write_mir_instr( state, mir, root_node, mir.next_var++ );
 
-    // Check whether there are None ops TODO
+    // Check whether there are None ops
+    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+        if ( instr.type == MT::None )
+            make_error_msg( state,
+                            "Found 'None' instruction in MIR. This is "
+                            "probably a compiler bug.",
+                            instr.ifi );
+    } );
 
     // DEBUG
     if ( true ) {
+        log( "== MIR INSTRS ==" );
         mir.instrs.for_each( []( const Mir::MirInstr &instr ) {
             String str = name_of_instr( instr.type ) + " " +
                          to_string( instr.result ) + " " +
@@ -141,7 +244,12 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
             olog( str );
         } );
     }
-
+    if ( true ) {
+        log( "== MIR REGS ==" );
+        for ( auto p : mir.reg_mapping ) {
+            olog( to_string( p.first ) + " => " + to_string( p.second ) );
+        }
+    }
 
     return mir;
 }

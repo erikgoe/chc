@@ -398,6 +398,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     // DEBUG
     if ( true ) {
+        log( "== AST ==" );
         std::function<void( const AstNode &, size_t )> print_node;
         print_node = [&]( const AstNode &n, size_t indent ) {
             String str = String( indent, ' ' ) + name_of_type( n.type ) +

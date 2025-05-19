@@ -271,6 +271,7 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
 
     // DEBUG
     if ( false ) {
+        log( "== TOKENS ==" );
         txt_no_ws.for_each( []( auto &&t ) {
             log( "Token " + to_string( (u32) t.type ) + ": " + t.content );
         } );
