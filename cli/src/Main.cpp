@@ -10,7 +10,7 @@ int main( int argc, char** argv ) {
     }
 
     CompilerConf conf;
-    for ( size_t i = 1; i < argc - 1; i++ )
+    for ( int i = 1; i < argc - 1; i++ )
         conf.in_files.push_back( String( argv[i] ) );
     conf.out_file = String( argv[argc - 1] );
 

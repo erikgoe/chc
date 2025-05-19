@@ -245,7 +245,8 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
             txt_tokenized.put(
                 Token{ Token::Type::Whitespace, t0.content, t0.ifi } );
         } else {
-            make_error_msg( state, "Forbidden character.", t0.ifi, RetCode::SyntaxError );
+            make_error_msg( state, "Forbidden character.", t0.ifi,
+                            RetCode::SyntaxError );
             txt_tokenized.put( {} );
         }
     }
@@ -270,12 +271,14 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
         []( const Token &t ) { return t.type != Token::Type::Whitespace; } );
 
     // DEBUG
+#ifndef NDEBUG
     if ( false ) {
         log( "== TOKENS ==" );
         txt_no_ws.for_each( []( auto &&t ) {
             log( "Token " + to_string( (u32) t.type ) + ": " + t.content );
         } );
     }
+#endif
 
     // Return final iterator
     return txt_no_ws;

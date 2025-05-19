@@ -56,7 +56,7 @@ Opt<String> find_similar_symbol(
     ssize_t best_match_val = 0;
 
     for ( auto &p : map ) {
-        size_t sim = similarity( p.first );
+        ssize_t sim = similarity( p.first );
         if ( sim > best_match_val ) {
             best_match = p.first;
             best_match_val = sim;
@@ -241,6 +241,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
 
 
     // DEBUG
+#ifndef NDEBUG
     if ( true ) {
         std::function<void( const AstNode &, size_t )> print_node;
         print_node = [&]( const AstNode &n, size_t indent ) {
@@ -253,6 +254,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
         };
         root_node.nodes->for_each( [&]( auto &&n ) { print_node( n, 0 ); } );
     }
+#endif
 }
 
 using MI = Mir::MirInstr;

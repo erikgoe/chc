@@ -197,8 +197,6 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
                                             ordering );
 
     // Greedy register allocation
-    std::set<RegId> avail; // Currently available registers
-    RegId next_reg = 0;
     for ( size_t i = 0; i < ordering.size(); i++ ) {
         auto v = ordering[i];
         auto &neighbors = inference_graph[v];
@@ -219,12 +217,14 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
     }
 
     // DEBUG
+#ifndef NDEBUG
     if ( true ) {
         log( "== MIR REGS ==" );
         for ( auto p : mir.reg_mapping ) {
             olog( to_string( p.first ) + " => " + to_string( p.second ) );
         }
     }
+#endif
 }
 
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {
@@ -242,6 +242,7 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     } );
 
     // DEBUG
+#ifndef NDEBUG
     if ( true ) {
         log( "== MIR INSTRS ==" );
         mir.instrs.for_each( []( const Mir::MirInstr &instr ) {
@@ -252,6 +253,7 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
             olog( str );
         } );
     }
+#endif
 
     return mir;
 }

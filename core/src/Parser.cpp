@@ -398,6 +398,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     }
 
     // DEBUG
+#ifndef NDEBUG
     if ( true ) {
         log( "== AST ==" );
         std::function<void( const AstNode &, size_t )> print_node;
@@ -411,6 +412,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         };
         full_graph.for_each( [&]( auto &&n ) { print_node( n, 0 ); } );
     }
+#endif
 
     // Return root of AST
     return root_node;

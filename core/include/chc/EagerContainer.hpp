@@ -82,7 +82,7 @@ public:
         }
         /// Jumps given elements forward/backward.
         Iterator &skip_self( ssize_t count = 1 ) {
-            if ( count < 0 && -count > idx ) {
+            if ( count < 0 && -count > static_cast<ssize_t>( idx ) ) {
                 idx = 0; // Don't underflow.
             } else {
                 idx += count;
