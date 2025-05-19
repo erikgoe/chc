@@ -13,7 +13,7 @@ struct CompilerConf {
 
 /// General compilation state.
 struct CompilerState {
-    i8 ret_code = 0;
+    RetCode ret_code = RetCode::Success;
 
     std::vector<Message> messages;
     bool success = true;
@@ -31,7 +31,7 @@ public:
     void compile();
 
     /// Returns the return code of the compiler.
-    i8 get_ret_code() { return state.ret_code; }
+    i8 get_ret_code() { return static_cast<i8>( state.ret_code ); }
 };
 
 } // namespace chc

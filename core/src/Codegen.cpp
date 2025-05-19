@@ -162,7 +162,7 @@ void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
             make_error_msg(
                 state,
                 "Unknown mir instruction. This is probably an compiler bug.",
-                instr.ifi );
+                instr.ifi, RetCode::InternalError );
         }
     } );
 }

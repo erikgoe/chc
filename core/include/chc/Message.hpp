@@ -20,9 +20,17 @@ struct Message {
     InFileInfo ifi;
 };
 
+enum class RetCode {
+    Success = 0,
+    InternalError = 1,
+    SemanticError = 7,
+    SyntaxError = 42,
+    count
+};
+
 /// Prints an error message to the user
 void make_error_msg( CompilerState &state, const String &message,
-                     const InFileInfo &ifi );
+                     const InFileInfo &ifi, RetCode return_code );
 /// Prints an warning message to the user
 void make_waring_msg( CompilerState &state, const String &message,
                       const InFileInfo &ifi );

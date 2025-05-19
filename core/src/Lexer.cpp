@@ -245,7 +245,7 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
             txt_tokenized.put(
                 Token{ Token::Type::Whitespace, t0.content, t0.ifi } );
         } else {
-            make_error_msg( state, "Forbidden character.", t0.ifi );
+            make_error_msg( state, "Forbidden character.", t0.ifi, RetCode::SyntaxError );
             txt_tokenized.put( {} );
         }
     }

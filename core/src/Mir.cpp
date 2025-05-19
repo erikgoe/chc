@@ -72,7 +72,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto paren = Paren( node ) ) {
         if ( paren.children.length() != 1 ) {
             make_error_msg( state, "Expected only one element in parenthesis.",
-                            node.ifi );
+                            node.ifi, RetCode::SemanticError );
         }
         auto child = paren.children.first()->get();
         write_mir_instr( state, mir, child, into_var );
@@ -238,7 +238,7 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
             make_error_msg( state,
                             "Found 'None' instruction in MIR. This is "
                             "probably a compiler bug.",
-                            instr.ifi );
+                            instr.ifi, RetCode::InternalError );
     } );
 
     // DEBUG

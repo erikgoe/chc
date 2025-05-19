@@ -138,7 +138,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             } else if ( value > 1ull << 31 ) {
                 make_error_msg( state,
                                 "Decimal constant does not fit into 32 bit.",
-                                t.ifi );
+                                t.ifi, RetCode::SyntaxError );
             }
             return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
         } else if ( t.type == TT::HexInteger ) {
@@ -146,7 +146,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             if ( value > 0xffffffffull ) {
                 make_error_msg(
                     state, "Hexadecimal constant does not fit into 32 bit.",
-                    t.ifi );
+                    t.ifi, RetCode::SyntaxError );
             }
             return AstNode{ AT::IntConst, {}, t, {}, t.ifi };
             // TODO strings not yet implemented
@@ -186,14 +186,15 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 if ( n.tok &&
                      ( n.tok->content == ")" || n.tok->content == "}" ) ) {
                     make_error_msg( state, "Unmatched closing bracket.",
-                                    itr.get().ifi );
+                                    itr.get().ifi, RetCode::SyntaxError );
                     return ret;
                 }
                 ret.nodes->put( n );
             }
         }
         if ( !closing_bracket.empty() && !itr ) {
-            make_error_msg( state, "Unmatched opening bracket.", open_at );
+            make_error_msg( state, "Unmatched opening bracket.", open_at,
+                            RetCode::SyntaxError );
         }
         return ret;
     };
@@ -365,7 +366,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     make_error_msg( state,
                                     "Expected statement in block. Did you "
                                     "forget a semicolon?",
-                                    node.ifi );
+                                    node.ifi, RetCode::SyntaxError );
             }
         } );
 
@@ -376,7 +377,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto node = itr.get();
             if ( node.type == AT::None )
                 make_error_msg( state, "Failed to match syntax around token.",
-                                node.ifi );
+                                node.ifi, RetCode::SyntaxError );
         } );
 
     AstCont full_graph = *root_node.nodes;
@@ -385,14 +386,14 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     if ( full_graph.length() != 1 || !full_graph.first().has_value() ||
          full_graph.first()->get().type != AT::FunctionDef ) {
         make_error_msg( state, "Expected single function at global scope.",
-                        InFileInfo{} );
+                        InFileInfo{}, RetCode::SemanticError );
         return {};
     }
     auto main_fn = full_graph.first()->get();
     if ( main_fn.nodes->first()->get().nodes->first()->get().tok->content !=
          "main" ) {
         make_error_msg( state, "Expected global function with name 'main'.",
-                        main_fn.ifi );
+                        main_fn.ifi, RetCode::SemanticError );
         return {};
     }
 

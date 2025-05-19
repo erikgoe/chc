@@ -82,8 +82,9 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
             if ( present_sym != symbol_map.end() ) {
                 if ( present_sym->second.id >= ps.first_symbol ) {
                     // Already declared in this scop
-                    make_error_msg(
-                        state, "Symbol already defined in this scope.", ifi );
+                    make_error_msg( state,
+                                    "Symbol already defined in this scope.",
+                                    ifi, RetCode::SemanticError );
                     make_info_msg( state, "Previously defined here.",
                                    present_sym->second.ifi );
                 } else {
@@ -116,7 +117,8 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                     ident.update_symbol_id( node, symbol_map[ident.symbol].id );
                 } else {
                     // Unknown symbol
-                    make_error_msg( state, "Undefined identifier", node.ifi );
+                    make_error_msg( state, "Undefined identifier", node.ifi,
+                                    RetCode::SemanticError );
                     auto sim = find_similar_symbol( ident.symbol, symbol_map );
                     if ( sim ) {
                         make_info_msg( state,
@@ -173,7 +175,7 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                 auto node = itr.get();
                 if ( node.type == AT::Ident && !node.symbol_id.has_value() )
                     make_error_msg( state, "Could not calculate id for symbol.",
-                                    node.ifi );
+                                    node.ifi, RetCode::SemanticError );
             } );
     }
 
@@ -188,7 +190,8 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                     found_return = true;
             } );
         if ( !found_return ) {
-            make_error_msg( state, "No return statement found.", InFileInfo{} );
+            make_error_msg( state, "No return statement found.", InFileInfo{},
+                            RetCode::SemanticError );
         }
     }
 }
@@ -262,11 +265,13 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
         if ( instr.p0 != 0 && defs.find( instr.p0 ) == defs.end() ) {
             // p0 not defined
-            make_error_msg( state, "Using undefined variable", instr.ifi );
+            make_error_msg( state, "Using undefined variable", instr.ifi,
+                            RetCode::SemanticError );
         }
         if ( instr.p1 != 0 && defs.find( instr.p1 ) == defs.end() ) {
             // p0 not defined
-            make_error_msg( state, "Using undefined variable", instr.ifi );
+            make_error_msg( state, "Using undefined variable", instr.ifi,
+                            RetCode::SemanticError );
         }
         if ( instr.result != 0 ) {
             defs.insert( instr.result );
