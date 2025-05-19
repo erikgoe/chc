@@ -54,21 +54,21 @@ void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
             case 3:
                 return "%rdi";
             case 4:
-                return "%8";
+                return "%r8";
             case 5:
-                return "%9";
+                return "%r9";
             case 6:
-                return "%10";
+                return "%r10";
             case 7:
-                return "%11";
+                return "%r11";
             case 8:
-                return "%12";
+                return "%r12";
             case 9:
-                return "%13";
+                return "%r13";
             case 10:
-                return "%14";
+                return "%r14";
             case 11:
-                return "%15";
+                return "%r15";
             default:
                 return "%noreg";
             }
