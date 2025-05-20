@@ -19,26 +19,31 @@ void make_info_msg( CompilerState &state, const String &message,
     state.messages.push_back( Message{ Message::Type::Info, message, ifi } );
 }
 
-String generate_message_string( const Message &mes,
-                                const String &file_content ) {
-    // Replace all tabs & newlines
-    String clean_str = file_content;
+void make_clean_code_str( const String &in, String &out ) {
+    out = in;
     size_t itr = 0;
-    while ( itr != clean_str.npos ) {
-        itr = clean_str.find( "\t", itr );
-        if ( itr != clean_str.npos ) {
-            clean_str.erase( itr, 1 );
-            clean_str.insert( itr, "    " );
+    while ( itr != out.npos ) {
+        itr = out.find( "\t", itr );
+        if ( itr != out.npos ) {
+            out.erase( itr, 1 );
+            out.insert( itr, "    " );
             itr += 4;
         }
     }
     itr = 0;
-    while ( itr != clean_str.npos ) {
-        itr = clean_str.find( "\r\n", itr );
-        if ( itr != clean_str.npos ) {
-            clean_str.erase( itr, 1 );
+    while ( itr != out.npos ) {
+        itr = out.find( "\r\n", itr );
+        if ( itr != out.npos ) {
+            out.erase( itr, 1 );
         }
     }
+}
+
+String generate_message_string( const Message &mes,
+                                const String &file_content ) {
+    // Replace all tabs & newlines
+    String clean_str = file_content;
+    make_clean_code_str( file_content, clean_str );
 
     // Calculate ln & col
     size_t ln = 1;

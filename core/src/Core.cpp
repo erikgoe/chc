@@ -41,8 +41,8 @@ void Core::compile() {
             if ( !state.success )
                 return;
 
-            assembly += "/* FILE " + file_path + "*/\n";
-            generate_code_x86( state, mir, assembly );
+            assembly += "/* FILE " + file_path + " */\n";
+            generate_code_x86( state, file_content, mir, assembly );
             assembly += "\n";
         };
         compile_pass();

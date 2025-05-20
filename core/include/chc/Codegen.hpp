@@ -35,6 +35,7 @@ using RegId = size_t;
     String str;
 }; */
 
-void generate_code_x86( CompilerState &state, Mir &mir, String &assembly );
+void generate_code_x86( CompilerState &state, const String &original_source,
+                        Mir &mir, String &assembly );
 
 } // namespace chc

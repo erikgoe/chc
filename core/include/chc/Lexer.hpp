@@ -19,6 +19,12 @@ struct InFileInfo {
         size_t end = std::max( offset + size, other.offset + other.size );
         return InFileInfo{ start, end - start };
     }
+    bool operator==( const InFileInfo &other ) const {
+        return offset == other.offset && size == other.size;
+    }
+    bool operator!=( const InFileInfo &other ) const {
+        return !( *this == other );
+    }
 };
 
 struct Token {

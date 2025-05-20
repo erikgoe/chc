@@ -8,6 +8,10 @@ using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 using RegId = Mir::RegId;
 
+#ifndef NDEBUG
+#define AMS_CODE_LINE_COMMENTS
+#endif
+
 constexpr char const *asm_preamble = R"(
 .global main
 .global _main
@@ -19,10 +23,45 @@ movq $0x3C, %rax
 syscall
 _main:)";
 
-void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
+void split_into_lines( const String &str, std::vector<String> &lines ) {
+    String tmp;
+    for ( auto c : str ) {
+        if ( c == '\n' ) {
+            lines.push_back( tmp );
+            tmp.clear();
+        } else {
+            tmp += c;
+        }
+    }
+}
+
+size_t line_from_offset( const String &str, size_t offset ) {
+    size_t ln = 0;
+    size_t i = 0;
+    for ( auto c : str ) {
+        if ( i >= offset )
+            break;
+        if ( c == '\n' ) {
+            ln++;
+        }
+        i++;
+    }
+    return ln;
+}
+
+void generate_code_x86( CompilerState &state, const String &original_source,
+                        Mir &mir, String &assembly ) {
     RegId stack_start_reg = 10;
     bool r10_curr_used =
         false; // whether r10 is already used for stack variables.
+
+    // Source code lines
+#ifdef AMS_CODE_LINE_COMMENTS
+    String clean_source;
+    make_clean_code_str( original_source, clean_source );
+    std::vector<String> source_lines;
+    split_into_lines( clean_source, source_lines );
+#endif
 
     // General utility functions
     auto put_asm = [&]( const String &mnemonic ) {
@@ -121,7 +160,27 @@ void generate_code_x86( CompilerState &state, Mir &mir, String &assembly ) {
              ", $0" );
 
     // Add all instructions
+#ifdef AMS_CODE_LINE_COMMENTS
+    ssize_t curr_line = -1;
+    InFileInfo curr_ifi;
+#endif
     mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+    // Printing source lines as comments for easier debugging
+#ifdef AMS_CODE_LINE_COMMENTS
+        size_t ln = line_from_offset( clean_source, instr.ifi.offset );
+        if ( ln != curr_line ) {
+            curr_line = ln;
+            assembly += "/*=> " + source_lines[ln] + " */\n";
+        }
+        if ( instr.ifi != curr_ifi ) {
+            curr_ifi = instr.ifi;
+            assembly += "/* " +
+                        clean_source.substr( curr_ifi.offset, curr_ifi.size ) +
+                        " */\n";
+        }
+#endif
+
+        // Actual instructions
         if ( instr.type == MT::Const ) {
             put_asm_ex_reg( "movq", "$" + to_string( instr.imm ), instr.result,
                             true );

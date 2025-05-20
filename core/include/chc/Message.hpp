@@ -38,6 +38,8 @@ void make_waring_msg( CompilerState &state, const String &message,
 void make_info_msg( CompilerState &state, const String &message,
                     const InFileInfo &ifi );
 
+void make_clean_code_str( const String &in, String &out );
+
 String generate_message_string( const Message &mes,
                                 const String &file_content );
 
