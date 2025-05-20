@@ -395,7 +395,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
             if ( itr.match( ast( AT::DeclUninit ), ast( AT::Paren ),
-                            ast( AT::Block ) ) ) {
+                            ast( AT::Block ) ) &&
+                 paren.nodes->empty() ) {
                 // Is "int <ident> ( ... ) { ... }"
                 // Remove two consumed elements.
                 itr.erase_self();

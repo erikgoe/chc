@@ -78,7 +78,6 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
         if ( fc.c == '\r' ) {
             if ( itr.skip().consume_or( FatChar{ {}, 0 } ).c == '\n' ) {
                 // Windows-style newlines
-                itr.consume();
                 txt_clean_newlines.put(
                     FatChar{ InFileInfo{ fc.ifi.offset, 2 }, '\n' } );
             } else {
@@ -124,11 +123,11 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
                     fc1 = itr.get_or( FatChar{ {}, '/' } );
                     if ( fc0.c == '*' && fc1.c == '/' ) {
                         --nest_counter;
-                        itr.consume(); // '/'
+                        itr.consume_opt(); // '/'
                         ++ifi.size;
                     } else if ( fc0.c == '/' && fc1.c == '*' ) {
                         ++nest_counter;
-                        itr.consume(); // '*'
+                        itr.consume_opt(); // '*'
                         ++ifi.size;
                     }
                     if ( nest_counter == 0 )
