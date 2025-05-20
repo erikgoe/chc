@@ -7,7 +7,8 @@ void make_error_msg( CompilerState &state, const String &message,
                      const InFileInfo &ifi, RetCode return_code ) {
     state.messages.push_back( Message{ Message::Type::Error, message, ifi } );
     state.success = false;
-    state.ret_code = return_code;
+    if ( state.ret_code != RetCode::SyntaxError ) // Set highest priority
+        state.ret_code = return_code;
 }
 void make_waring_msg( CompilerState &state, const String &message,
                       const InFileInfo &ifi ) {

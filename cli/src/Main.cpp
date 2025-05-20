@@ -15,13 +15,16 @@ int main( int argc, char** argv ) {
     conf.out_file = String( argv[argc - 1] );
 
     // Stopwatch
+#ifndef NDEBUG
     auto begin_clock = std::chrono::steady_clock::now();
+#endif
 
     // The compiler core
     Core core( conf );
     core.compile();
 
-    // Calculate time
+// Calculate time
+#ifndef NDEBUG
     auto end_clock = std::chrono::steady_clock::now();
     f32 seconds =
         static_cast<f32>( std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -29,6 +32,7 @@ int main( int argc, char** argv ) {
                               .count() ) /
         1000.f;
     log( "Elapsed time: " + to_string( seconds ) + " sec" );
+#endif
 
     return core.get_ret_code();
 }

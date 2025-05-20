@@ -8,6 +8,8 @@ String name_of_type( AstNode::Type type ) {
     switch ( type ) {
     case AstNode::Type::None:
         return "None";
+    case AstNode::Type::Token:
+        return "Token";
     case AstNode::Type::GlobalScope:
         return "GlobalScope";
     case AstNode::Type::FunctionDef:
@@ -39,6 +41,21 @@ String name_of_type( AstNode::Type type ) {
     }
 }
 
+void print_ast( const AstNode &root, const String &title = "" ) {
+    if ( !title.empty() )
+        log( title );
+    std::function<void( const AstNode &, size_t )> print_node;
+    print_node = [&]( const AstNode &n, size_t indent ) {
+        String str = String( indent, ' ' ) + name_of_type( n.type ) +
+                     ( n.tok ? ": " + n.tok->content : "" );
+        olog( str );
+        if ( n.nodes )
+            n.nodes->for_each(
+                [&]( auto &&sub ) { print_node( sub, indent + 1 ); } );
+    };
+    print_node( root, 0 );
+}
+
 AstNode ast( AstNode::Type type ) {
     return AstNode{ type };
 }
@@ -54,7 +71,7 @@ AstNode ast( AstNode::Type type, Pack... pack ) {
     return AstNode{ type, nodes };
 }
 AstNode ast_tok( Token::Type type, const String &content = "" ) {
-    return AstNode{ AstNode::Type::None, {}, Token{ type, content } };
+    return AstNode{ AstNode::Type::Token, {}, Token{ type, content } };
 }
 template <typename... Pack>
 AstNode ast_with_tok( AstNode::Type type, Token::Type tok_type,
@@ -168,7 +185,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         } else if ( t.type == TT::Identifier ) {
             return AstNode{ AT::Ident, {}, t, {}, t.ifi };
         } else {
-            return AstNode{ AT::None, {}, t, {}, t.ifi };
+            return AstNode{ AT::Token, {}, t, {}, t.ifi };
         }
     } );
 
@@ -199,7 +216,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 if ( n.tok &&
                      ( n.tok->content == ")" || n.tok->content == "}" ) ) {
                     make_error_msg( state, "Unmatched closing bracket.",
-                                    itr.get().ifi, RetCode::SyntaxError );
+                                    n.ifi, RetCode::SyntaxError );
                     return ret;
                 }
                 ret.nodes->put( n );
@@ -215,7 +232,6 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     AstNode root_node = parse_parens( itr, "", InFileInfo{} );
     root_node.type = AT::GlobalScope;
 
-
     // Prefix "-" operator
     apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
@@ -229,8 +245,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     itr.erase_self();
                     // Replace with merged token
                     itr.get() = make_merged_node( AT::UniOp, *op.tok, { rhs } );
+                    return true;
                 }
             }
+            return false;
         } );
 
     // "*", "/", "%" operators
@@ -250,9 +268,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    itr.skip_self( -1 );
+                    return true;
                 }
             }
+            return false;
         } );
 
     // "+", "-" operators
@@ -271,9 +290,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    itr.skip_self( -1 );
+                    return true;
                 }
             }
+            return false;
         } );
 
     // Assignment operators
@@ -296,10 +316,13 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     // Replace with merged token
                     itr.get() =
                         make_merged_node( AT::Simp, *op.tok, { lhs, rhs } );
-                    itr.skip_self( -1 );
+                    return true;
                 }
             }
+            return false;
         } );
+
+    // print_ast( root_node, "After ops"  ); // DEBUG
 
     // Statements
     apply_pass_recursively_from_left(
@@ -315,6 +338,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() = make_merged_node( AT::Decl, *lhs.tok, { opr } );
+                return true;
             } else if ( itr.match( ast_tok( TT::Keyword, "int" ),
                                    ast( AT::Ident ) ) ) {
                 // Is "int <ident>"
@@ -323,6 +347,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 // Replace with merged token
                 itr.get() =
                     make_merged_node( AT::DeclUninit, *lhs.tok, { opr } );
+                return true;
             } else if ( itr.match( ast_tok( TT::Keyword, "return" ) ) &&
                         is_expr( opr ) ) {
                 // Is "ret <expr>"
@@ -330,8 +355,12 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() = make_merged_node( AT::Ret, *lhs.tok, { opr } );
+                return true;
             }
+            return false;
         } );
+
+    // print_ast( root_node, "After statements"  ); // DEBUG
 
     // Semicolons
     apply_pass_recursively_from_left(
@@ -347,15 +376,19 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 // Replace with merged token
                 itr.get() =
                     make_merged_node( AT::Stmt, *semicolon.tok, { stmt } );
+                return true;
             }
+            return false;
         } );
+
+    // print_ast( root_node, "After semicolons"  ); // DEBUG
 
     // Function definitions
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( parent.type != AT::GlobalScope )
-                return; // Only allow function definitions in global scope
+                return false; // Only allow function definitions in global scope
             auto head = itr.get();
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
@@ -369,7 +402,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.get() = make_merged_node( AT::FunctionDef,
                                               *head.nodes->first()->get().tok,
                                               { head, paren, block } );
+                return true;
             }
+            return false;
         } );
 
     // Check for AT::Stmt in blocks
@@ -384,16 +419,18 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                                     "forget a semicolon?",
                                     node.ifi, RetCode::SyntaxError );
             }
+            return false;
         } );
 
-    // Check against orphan AT::None
+    // Check against orphan AT::None or AT::Token
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto node = itr.get();
-            if ( node.type == AT::None )
+            if ( node.type == AT::None || node.type == AT::Token )
                 make_error_msg( state, "Failed to match syntax around token.",
                                 node.ifi, RetCode::SyntaxError );
+            return false;
         } );
 
     AstCont full_graph = *root_node.nodes;
@@ -416,17 +453,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     // DEBUG
 #ifndef NDEBUG
     if ( true ) {
-        log( "== AST ==" );
-        std::function<void( const AstNode &, size_t )> print_node;
-        print_node = [&]( const AstNode &n, size_t indent ) {
-            String str = String( indent, ' ' ) + name_of_type( n.type ) +
-                         ( n.tok ? ": " + n.tok->content : "" );
-            olog( str );
-            if ( n.nodes )
-                n.nodes->for_each(
-                    [&]( auto &&sub ) { print_node( sub, indent + 1 ); } );
-        };
-        full_graph.for_each( [&]( auto &&n ) { print_node( n, 0 ); } );
+        full_graph.for_each( [&]( auto &&n ) { print_ast( n, "== AST ==" ); } );
     }
 #endif
 

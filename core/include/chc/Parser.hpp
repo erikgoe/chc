@@ -10,6 +10,7 @@ struct AstNode {
     enum class Type {
         None,
 
+        Token,
         GlobalScope,
         FunctionDef,
         Stmt,

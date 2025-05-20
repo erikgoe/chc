@@ -176,6 +176,7 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                 if ( node.type == AT::Ident && !node.symbol_id.has_value() )
                     make_error_msg( state, "Could not calculate id for symbol.",
                                     node.ifi, RetCode::SemanticError );
+                return false;
             } );
     }
 
@@ -188,6 +189,7 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                 auto node = itr.get();
                 if ( node.type == AT::Ret )
                     found_return = true;
+                return false;
             } );
         if ( !found_return ) {
             make_error_msg( state, "No return statement found.", InFileInfo{},
@@ -233,10 +235,12 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
 
                     // Replace
                     itr.get().nodes->itr().get() = outer_node;
+                    return true;
                 }
             }
             // TODO check if future specifications also only allow simp as
             // statement and not as expression (which would not match here).
+            return false;
         } );
 
 
