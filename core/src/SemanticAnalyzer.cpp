@@ -104,7 +104,7 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
         // Check node
         if ( auto decl = DeclStmt( node ) ) {
             // Normal variable declaration
-            analyze_block( decl.init );
+            analyze_block( decl.ref_init( node ) );
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
             decl.update_symbol_id( node, new_id );
         } else if ( auto decl = DeclUninitStmt( node ) ) {

@@ -102,6 +102,11 @@ public:
         simp_itr.get().symbol_id = new_id;
         symbol_id = new_id;
     }
+    AstNode &ref_init( AstNode &wrapped_node ) {
+        auto itr = wrapped_node.nodes->first()->get().nodes->itr();
+        auto simp_itr = itr.get().nodes->itr();
+        return simp_itr.skip( 1 ).get();
+    }
 
     String type;
     String symbol;
