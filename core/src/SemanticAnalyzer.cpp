@@ -197,7 +197,7 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
         }
     }
 }
-String name_of_type( AstNode::Type type );
+void print_ast( const AstNode &root, const String &title );
 
 void operator_transformation( CompilerState &state, AstNode &root_node ) {
     apply_pass_recursively_from_left(
@@ -246,7 +246,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
 
     // DEBUG
 #ifndef NDEBUG
-    if ( true ) {
+    if ( false ) {
         std::function<void( const AstNode &, size_t )> print_node;
         print_node = [&]( const AstNode &n, size_t indent ) {
             String str = String( indent, ' ' ) + name_of_type( n.type ) +
@@ -256,7 +256,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                 n.nodes->for_each(
                     [&]( auto &&sub ) { print_node( sub, indent + 1 ); } );
         };
-        root_node.nodes->for_each( [&]( auto &&n ) { print_node( n, 0 ); } );
+        root_node.nodes->for_each(
+            [&]( auto &&n ) { print_ast( n, "== TRANSFORMED AST ==" ); } );
     }
 #endif
 }

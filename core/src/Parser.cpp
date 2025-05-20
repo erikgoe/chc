@@ -107,9 +107,11 @@ using AstCont = EagerContainer<AstNode>;
 using AstItr = EagerContainer<AstNode>::Iterator;
 
 bool is_expr( const AstNode &node ) {
-    return node.type == AT::Paren || node.type == AT::IntConst ||
-           node.type == AT::Ident || node.type == AT::BinOp ||
-           node.type == AT::UniOp;
+    return ( node.type == AT::Paren &&
+             ( node.nodes->empty() ||
+               is_expr( node.nodes->first()->get() ) ) ) ||
+           node.type == AT::IntConst || node.type == AT::Ident ||
+           node.type == AT::BinOp || node.type == AT::UniOp;
 }
 
 bool is_stmt_body( const AstNode &node ) {
@@ -215,8 +217,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 auto n = itr.consume();
                 if ( n.tok &&
                      ( n.tok->content == ")" || n.tok->content == "}" ) ) {
-                    make_error_msg( state, "Unmatched closing bracket.",
-                                    n.ifi, RetCode::SyntaxError );
+                    make_error_msg( state, "Unmatched closing bracket.", n.ifi,
+                                    RetCode::SyntaxError );
                     return ret;
                 }
                 ret.nodes->put( n );

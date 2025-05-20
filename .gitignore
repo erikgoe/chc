@@ -2,4 +2,4 @@ build/
 test/code/test.l1
 test/code/out.s
 test/code/out
-./chc
+/chc
