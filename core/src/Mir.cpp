@@ -41,6 +41,20 @@ String name_of_instr( Mir::MirInstr::Type type ) {
     }
 }
 
+SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
+    if ( n.type == AT::Ident ) {
+        return n.symbol_id.value();
+    } else if ( n.type == AT::Paren && n.nodes->not_empty() ) {
+        return symbol_id_of_lvalue( state, n.nodes->first()->get() );
+    } else {
+        make_error_msg(
+            state,
+            "LValue is of unknow type. This is probably in compiler bug.",
+            n.ifi, RetCode::InternalError );
+        return 0;
+    }
+}
+
 void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
     if ( auto fn_def = FunctionDef( node ) ) {
@@ -64,7 +78,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto stmt = SimpStmt( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
-        VarId variable = mir.var_map[stmt.lvalue.symbol_id.value()];
+        VarId variable = mir.var_map[symbol_id_of_lvalue( state, stmt.lvalue )];
         write_mir_instr( state, mir, stmt.value, variable );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id.value()];
@@ -72,7 +86,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto paren = Paren( node ) ) {
         if ( paren.children.length() != 1 ) {
             make_error_msg( state, "Expected only one element in parenthesis.",
-                            node.ifi, RetCode::SemanticError );
+                            node.ifi, RetCode::SyntaxError );
+            return;
         }
         auto child = paren.children.first()->get();
         write_mir_instr( state, mir, child, into_var );
