@@ -264,9 +264,9 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
 
     // Detect keywords
     std::set<String> keywords = {
-        "struct", "if",          "else", "while", "for",   "continue", "break",
-        "return", "assert",      "true", "false", "NULL",  "print",    "read",
-        "alloc",  "alloc_array", "int",  "bool",  "void ", "char",     "string"
+        "struct", "if",          "else", "while", "for",  "continue", "break",
+        "return", "assert",      "true", "false", "NULL", "print",    "read",
+        "alloc",  "alloc_array", "int",  "bool",  "void", "char",     "string"
     };
     EagerContainer<Token> txt_with_kw =
         txt_tokenized.map<Token>( [keywords]( const Token &tok ) {
