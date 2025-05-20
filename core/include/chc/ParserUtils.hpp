@@ -15,12 +15,15 @@ inline void apply_pass_recursively_from_left(
         func ) {
     auto itr = block.begin();
     while ( itr ) {
-        while ( func( state, itr, parent ) ) {
-        }
         if ( itr && itr.get().nodes )
             apply_pass_recursively_from_left( state, *itr.get().nodes,
                                               itr.get(), func );
         itr.skip_self( 1 );
+    }
+    itr = block.begin();
+    while ( itr ) {
+        if ( !func( state, itr, parent ) )
+            itr.skip_self( 1 );
     }
 }
 
@@ -33,11 +36,15 @@ inline void apply_pass_recursively_from_right(
     auto itr = block.end();
     while ( itr != block.begin() ) {
         itr.skip_self( -1 );
-        while ( func( state, itr, parent ) ) {
-        }
         if ( itr && itr.get().nodes )
             apply_pass_recursively_from_right( state, *itr.get().nodes,
                                                itr.get(), func );
+    }
+    itr = block.end();
+    while ( itr != block.begin() ) {
+        itr.skip_self( -1 );
+        while ( func( state, itr, parent ) ) {
+        }
     }
 }
 
