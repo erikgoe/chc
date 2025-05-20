@@ -118,9 +118,9 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
                 ++ifi.size;
                 size_t nest_counter = 1; // Count nested block comments.
                 while ( true ) {
-                    fc0 = itr.consume_or( FatChar{ {}, '*' } );
+                    fc0 = itr.consume_or( FatChar{ {}, '\n' } );
                     ++ifi.size;
-                    fc1 = itr.get_or( FatChar{ {}, '/' } );
+                    fc1 = itr.get_or( FatChar{ {}, '\n' } );
                     if ( fc0.c == '*' && fc1.c == '/' ) {
                         --nest_counter;
                         itr.consume_opt(); // '/'
@@ -132,6 +132,12 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
                     }
                     if ( nest_counter == 0 )
                         break;
+                    if ( itr.curr_not_valid() ) {
+                        // Reached end of file with unclosed block comment
+                        make_error_msg( state, "Unclosed block comment",
+                                        fc0.ifi, RetCode::SyntaxError );
+                        break;
+                    }
                 }
                 txt_with_strings.put(
                     Token{ Token::Type::None, " ",
@@ -143,11 +149,17 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
             //    // Strings
             //    String content;
             //    while ( true ) {
-            //        fc0 = itr.consume_or( FatChar{ {}, '"' } );
+            //        fc0 = itr.consume_or( FatChar{ {}, '\n' } );
             //        ++ifi.size;
             //        // TODO handle escape characters
             //        if ( fc0.c == '"' )
             //            break;
+            //        if ( itr.curr_not_valid() ) {
+            //            // Reached end of file with unclosed string
+            //            make_error_msg( state, "Unclosed string",
+            //                            fc0.ifi, RetCode::SyntaxError );
+            //            break;
+            //        }
             //        content += fc0.c;
             //    }
             //    txt_with_strings.put( Token{ Token::Type::String, content,
