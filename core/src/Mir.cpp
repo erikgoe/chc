@@ -144,7 +144,8 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto next = itr.skip( 1 ).get_or( MI{} );
+        auto &next = itr.skip( 1 ).get_or( MI{} );
+
         if ( instr.p0 != 0 ) {
             instr.life.insert( instr.p0 );
         }
@@ -159,6 +160,60 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
         // TODO does not account for jumps yet! Needs another "successor"
         // detection pass. Then this can instead be implemented as forward pass.
     }
+}
+
+bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
+    return instr.type == MT::Ret || instr.type == MT::Div ||
+           instr.type == MT::Mod;
+}
+
+void analyze_neededness( CompilerState &state, Mir &mir ) {
+    auto itr = mir.instrs.end();
+    while ( itr != mir.instrs.begin() ) {
+        itr.skip_self( -1 );
+        auto &instr = itr.get();
+        auto &next = itr.skip( 1 ).get_or( MI{} );
+
+        if ( has_effect( mir, instr ) ) {
+            // Operations with some effect make their parameters needed.
+            if ( instr.p0 != 0 ) {
+                instr.needed.insert( instr.p0 );
+            }
+            if ( instr.p1 != 0 ) {
+                instr.needed.insert( instr.p1 );
+            }
+        }
+        for ( auto &v : next.needed ) {
+            // Transitivity of neededness from successors.
+            if ( v != instr.result ) {
+                instr.needed.insert( v );
+            }
+            if ( instr.result != 0 && v == instr.result ) {
+                if ( instr.p0 != 0 ) {
+                    instr.needed.insert( instr.p0 );
+                }
+                if ( instr.p1 != 0 ) {
+                    instr.needed.insert( instr.p1 );
+                }
+            }
+        }
+        // TODO same as analyze_liveness() does not account for jumps yet!
+    }
+}
+
+void trim_dead_code( CompilerState &state, Mir &mir ) {
+    auto itr = mir.instrs.end();
+    while ( itr != mir.instrs.begin() ) {
+        itr.skip_self( -1 );
+        auto &instr = itr.get();
+        auto &next = itr.skip( 1 ).get_or( MI{} );
+        if ( !has_effect( mir, instr ) &&
+             next.needed.find( instr.result ) == next.needed.end() ) {
+            // Result is not needed and therefore this line is dead code.
+            itr.erase_self();
+        }
+    }
+    // TODO same as analyze_liveness() does not account for jumps yet!
 }
 
 void create_inference_graph(

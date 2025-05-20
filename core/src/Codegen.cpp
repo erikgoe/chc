@@ -72,38 +72,38 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     auto stack_preface = [&]( RegId reg ) -> const String {
         if ( mir.reg_mapping[reg] >= stack_start_reg ) {
             // Must load register from stack
-            size_t addr_offset = 8 * ( mir.reg_mapping[reg] - stack_start_reg );
+            size_t addr_offset = 4 * ( mir.reg_mapping[reg] - stack_start_reg );
             if ( !r10_curr_used ) {
-                put_asm( "movq " + to_string( addr_offset ) + "(%rsp), %r10" );
+                put_asm( "movl " + to_string( addr_offset ) + "(%esp), %r10d" );
                 r10_curr_used = true;
-                return "%r10";
+                return "%r10d";
             } else {
-                put_asm( "movq " + to_string( addr_offset ) + "(%rsp), %r11" );
-                return "%r11";
+                put_asm( "movl " + to_string( addr_offset ) + "(%esp), %r11d" );
+                return "%r11d";
             }
         } else {
             // Map normal registers
             switch ( mir.reg_mapping[reg] ) {
             case 0:
-                return "%rbx";
+                return "%ebx";
             case 1:
-                return "%rcx";
+                return "%ecx";
             case 2:
-                return "%rsi";
+                return "%esi";
             case 3:
-                return "%rdi";
+                return "%edi";
             case 4:
-                return "%r8";
+                return "%r8d";
             case 5:
-                return "%r9";
+                return "%r9d";
             case 6:
-                return "%r12";
+                return "%r12d";
             case 7:
-                return "%r13";
+                return "%r13d";
             case 8:
-                return "%r14";
+                return "%r14d";
             case 9:
-                return "%r15";
+                return "%r15d";
             default:
                 return "%noreg";
             }
@@ -111,14 +111,14 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     };
     auto stack_epilog = [&]( RegId reg, const String &used_reg,
                              bool writeback ) {
-        size_t addr_offset = 8 * ( mir.reg_mapping[reg] - stack_start_reg );
-        if ( used_reg == "%r10" ) {
+        size_t addr_offset = 4 * ( mir.reg_mapping[reg] - stack_start_reg );
+        if ( used_reg == "%r10d" ) {
             r10_curr_used = false;
             if ( writeback )
-                put_asm( "movq %r10, " + to_string( addr_offset ) + "(%rsp)" );
-        } else if ( used_reg == "%r11" ) {
+                put_asm( "movl %r10d, " + to_string( addr_offset ) + "(%esp)" );
+        } else if ( used_reg == "%r11d" ) {
             if ( writeback )
-                put_asm( "movq %r11, " + to_string( addr_offset ) + "(%rsp)" );
+                put_asm( "movl %r11d, " + to_string( addr_offset ) + "(%esp)" );
         }
     };
 
@@ -155,7 +155,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
 
     // Add main "function" preface
     put_asm( "enter $" +
-             to_string( 8 * ( mir.reg_count -
+             to_string( 4 * ( mir.reg_count -
                               std::min( mir.reg_count, stack_start_reg ) ) ) +
              ", $0" );
 
@@ -168,7 +168,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     // Printing source lines as comments for easier debugging
 #ifdef AMS_CODE_LINE_COMMENTS
         size_t ln = line_from_offset( clean_source, instr.ifi.offset );
-        if ( ln != curr_line ) {
+        if ( static_cast<ssize_t>( ln ) != curr_line ) {
             curr_line = ln;
             assembly += "/*=> " + source_lines[ln] + " */\n";
         }
@@ -182,34 +182,34 @@ void generate_code_x86( CompilerState &state, const String &original_source,
 
         // Actual instructions
         if ( instr.type == MT::Const ) {
-            put_asm_ex_reg( "movq", "$" + to_string( instr.imm ), instr.result,
+            put_asm_ex_reg( "movl", "$" + to_string( instr.imm ), instr.result,
                             true );
         } else if ( instr.type == MT::Mov ) {
-            put_asm_reg_reg( "movq", instr.p0, instr.result, false, true );
+            put_asm_reg_reg( "movl", instr.p0, instr.result, false, true );
         } else if ( instr.type == MT::Add ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
-            put_asm_reg_ex( "addq", instr.p1, "%rax", false );
-            put_asm_ex_reg( "movq", "%rax", instr.result, true );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
+            put_asm_reg_ex( "addl", instr.p1, "%eax", false );
+            put_asm_ex_reg( "movl", "%eax", instr.result, true );
         } else if ( instr.type == MT::Sub ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
-            put_asm_reg_ex( "subq", instr.p1, "%rax", false );
-            put_asm_ex_reg( "movq", "%rax", instr.result, true );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
+            put_asm_reg_ex( "subl", instr.p1, "%eax", false );
+            put_asm_ex_reg( "movl", "%eax", instr.result, true );
         } else if ( instr.type == MT::Mul ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
-            put_asm_reg_ex( "imulq", instr.p1, "%rax", false );
-            put_asm_ex_reg( "movq", "%rax", instr.result, true );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
+            put_asm_reg_ex( "imull", instr.p1, "%eax", false );
+            put_asm_ex_reg( "movl", "%eax", instr.result, true );
         } else if ( instr.type == MT::Div ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
             put_asm( "cltd" );
-            put_asm_reg( "idivq", instr.p1, false );
-            put_asm_ex_reg( "movq", "%rax", instr.result, true );
+            put_asm_reg( "idivl", instr.p1, false );
+            put_asm_ex_reg( "movl", "%eax", instr.result, true );
         } else if ( instr.type == MT::Mod ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
             put_asm( "cltd" );
-            put_asm_reg( "idivq", instr.p1, false );
-            put_asm_ex_reg( "movq", "%rdx", instr.result, true );
+            put_asm_reg( "idivl", instr.p1, false );
+            put_asm_ex_reg( "movl", "%edx", instr.result, true );
         } else if ( instr.type == MT::Ret ) {
-            put_asm_reg_ex( "movq", instr.p0, "%rax", false );
+            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
             put_asm( "leave" );
             put_asm( "ret" );
         } else if ( instr.type != MT::Nop ) {

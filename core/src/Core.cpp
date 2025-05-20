@@ -37,6 +37,8 @@ void Core::compile() {
                 return;
 
             analyze_liveness( state, mir );
+            analyze_neededness( state, mir );
+            trim_dead_code( state, mir );
             create_register_mapping( state, mir );
             if ( !state.success )
                 return;

@@ -35,6 +35,7 @@ struct Mir {
         InFileInfo ifi;
 
         std::set<VarId> life;
+        std::set<VarId> needed; // Needed variables
     };
 
     EagerContainer<MirInstr> instrs;
@@ -46,6 +47,10 @@ struct Mir {
 };
 
 void analyze_liveness( CompilerState &state, Mir &mir );
+
+void analyze_neededness( CompilerState &state, Mir &mir );
+
+void trim_dead_code(CompilerState &state, Mir &mir );
 
 void create_register_mapping( CompilerState &state, Mir &mir );
 
