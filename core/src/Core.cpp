@@ -51,9 +51,9 @@ void Core::compile() {
         };
         compile_pass();
 
-        // Print messages
-        for ( auto &m : state.messages ) {
-            olog( generate_message_string( m, file_content ) );
+        // Print messages (max 30 messages)
+        for ( size_t i = 0; i < state.messages.size() && i < 30; i++ ) {
+            olog( generate_message_string( state.messages[i], file_content ) );
         }
     }
 

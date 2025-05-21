@@ -83,6 +83,12 @@ String generate_message_string( const Message &mes,
                           clean_str.find( '\n', line_idx ) - line_idx ) +
         "\n";
 
+    // Limit length of code line
+    if ( code_line.length() > 149 )
+        code_line = code_line.substr( 0, 146 ) + "...\n ";
+    if ( col > 150 )
+        return mes_text + code_line;
+
     // Generate underline
     String underline = String( to_string( ln ).size() + 3 + col - 1, ' ' ) +
                        String( mes.ifi.size, '~' );
