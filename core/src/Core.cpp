@@ -43,8 +43,10 @@ void Core::compile() {
             if ( !state.success )
                 return;
 
+            EagerContainer<Assembly_x86> asm_code;
+            generate_code_x86( state, file_content, mir, asm_code );
             assembly += "/* FILE " + file_path + " */\n";
-            generate_code_x86( state, file_content, mir, assembly );
+            generate_asm_text_x86( state, asm_code, assembly );
             assembly += "\n";
         };
         compile_pass();

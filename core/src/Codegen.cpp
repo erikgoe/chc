@@ -7,21 +7,12 @@ using MI = Mir::MirInstr;
 using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 using RegId = Mir::RegId;
+using AOC = Assembly_x86::OpCode;
+using HwReg = Assembly_x86::HwReg;
 
 #ifndef NDEBUG
 #define AMS_CODE_LINE_COMMENTS
 #endif
-
-constexpr char const *asm_preamble = R"(
-.global main
-.global _main
-.text
-main:
-call _main
-movq %rax, %rdi
-movq $0x3C, %rax
-syscall
-_main:)";
 
 void split_into_lines( const String &str, std::vector<String> &lines ) {
     String tmp;
@@ -50,10 +41,10 @@ size_t line_from_offset( const String &str, size_t offset ) {
 }
 
 void generate_code_x86( CompilerState &state, const String &original_source,
-                        Mir &mir, String &assembly ) {
-    RegId stack_start_reg = 10;
-    bool r10_curr_used =
-        false; // whether r10 is already used for stack variables.
+                        Mir &mir, EagerContainer<Assembly_x86> &assembly ) {
+    constexpr HwReg no_reg = HwReg::None;
+    RegId virtual_stack_start_reg = 11; // DEBUG
+    InFileInfo no_ifi;
 
     // Source code lines
 #ifdef AMS_CODE_LINE_COMMENTS
@@ -63,101 +54,137 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     split_into_lines( clean_source, source_lines );
 #endif
 
-    // General utility functions
-    auto put_asm = [&]( const String &mnemonic ) {
-        assembly += mnemonic + "\n";
+    // Functions to generate single instructions
+    auto put_comment = [&]( const String &content, const InFileInfo &ifi ) {
+        assembly.put(
+            Assembly_x86{ AOC::Comment, no_reg, no_reg, 0, content, ifi } );
+    };
+    (void) put_comment; // Ignore unused in release build.
+    auto put_reg_reg = [&]( AOC opcode, HwReg dest, HwReg src,
+                            const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, dest, src, 0, "", ifi } );
+    };
+    auto put_reg_imm = [&]( AOC opcode, HwReg dest, i32 imm,
+                            const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, dest, no_reg, imm, "", ifi } );
+    };
+    auto put_src_reg_imm = [&]( AOC opcode, HwReg src, i32 imm,
+                                const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, no_reg, src, imm, "", ifi } );
+    };
+    auto put_imm = [&]( AOC opcode, i32 imm, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, no_reg, no_reg, imm, "", ifi } );
+    };
+    auto put_str = [&]( AOC opcode, const String &str, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, no_reg, no_reg, 0, str, ifi } );
+    };
+    auto put_label = [&]( const String &str, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ AOC::Label, no_reg, no_reg, 0, str, ifi } );
+    };
+    auto put_empty = [&]( AOC opcode, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, no_reg, no_reg, 0, "", ifi } );
     };
 
-    // Utility functions to manage (spilled) registers
-    auto stack_preface = [&]( RegId reg ) -> const String {
-        if ( mir.reg_mapping[reg] >= stack_start_reg ) {
-            // Must load register from stack
-            size_t addr_offset = 4 * ( mir.reg_mapping[reg] - stack_start_reg );
-            if ( !r10_curr_used ) {
-                put_asm( "movl " + to_string( addr_offset ) + "(%esp), %r10d" );
-                r10_curr_used = true;
-                return "%r10d";
-            } else {
-                put_asm( "movl " + to_string( addr_offset ) + "(%esp), %r11d" );
-                return "%r11d";
-            }
+    // Translation between virtual registers and hardware registers
+    auto to_hw_reg = [&]( RegId reg ) -> HwReg {
+        if ( reg >= virtual_stack_start_reg ) {
+            return HwReg::r10d;
         } else {
             // Map normal registers
-            switch ( mir.reg_mapping[reg] ) {
+            switch ( reg ) {
             case 0:
-                return "%ebx";
+                return HwReg::ebx;
             case 1:
-                return "%ecx";
+                return HwReg::ecx;
             case 2:
-                return "%esi";
+                return HwReg::esi;
             case 3:
-                return "%edi";
+                return HwReg::edi;
             case 4:
-                return "%r8d";
+                return HwReg::r8d;
             case 5:
-                return "%r9d";
+                return HwReg::r9d;
             case 6:
-                return "%r12d";
+                return HwReg::r11d;
             case 7:
-                return "%r13d";
+                return HwReg::r12d;
             case 8:
-                return "%r14d";
+                return HwReg::r13d;
             case 9:
-                return "%r15d";
+                return HwReg::r14d;
+            case 10:
+                return HwReg::r15d;
             default:
-                return "%noreg";
+                return HwReg::None;
             }
         }
     };
-    auto stack_epilog = [&]( RegId reg, const String &used_reg,
-                             bool writeback ) {
-        size_t addr_offset = 4 * ( mir.reg_mapping[reg] - stack_start_reg );
-        if ( used_reg == "%r10d" ) {
-            r10_curr_used = false;
-            if ( writeback )
-                put_asm( "movl %r10d, " + to_string( addr_offset ) + "(%esp)" );
-        } else if ( used_reg == "%r11d" ) {
-            if ( writeback )
-                put_asm( "movl %r11d, " + to_string( addr_offset ) + "(%esp)" );
-        }
-    };
 
-    // Utility functions to write assembly instructions
-    auto put_asm_reg_reg = [&]( const String &mnemonic, RegId r0, RegId r1,
-                                bool r0_writeback, bool r1_writeback ) {
-        auto r0_name = stack_preface( r0 );
-        auto r1_name = stack_preface( r1 );
-        assembly += mnemonic + " " + r0_name + ", " + r1_name + "\n";
-        stack_epilog( r1, r1_name, r1_writeback );
-        stack_epilog( r0, r0_name, r0_writeback );
+    // Get register and optionally load from stack
+    auto make_available = [&]( VarId var, const InFileInfo &ifi ) -> HwReg {
+        RegId reg = mir.reg_mapping[var];
+        if ( reg < virtual_stack_start_reg ) {
+            // Simply use available register
+            return to_hw_reg( reg );
+        }
+
+        // Load from stack first
+        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
+        put_reg_imm( AOC::MovFromStack, HwReg::r10d, addr_offset, ifi );
+        return HwReg::r10d;
     };
-    auto put_asm_reg_ex = [&]( const String &mnemonic, RegId r,
-                               const String &ex, bool r_writeback ) {
-        auto r_name = stack_preface( r );
-        assembly += mnemonic + " " + r_name + ", " + ex + "\n";
-        stack_epilog( r, r_name, r_writeback );
+    // Copy to register and optionally load from stack
+    auto make_available_in = [&]( VarId var, HwReg dest_reg,
+                                  const InFileInfo &ifi ) {
+        RegId reg = mir.reg_mapping[var];
+        if ( reg < virtual_stack_start_reg ) {
+            HwReg hw_reg = to_hw_reg( reg );
+            if ( hw_reg != dest_reg ) {
+                // Copy into destination register.
+                put_reg_reg( AOC::Mov, dest_reg, hw_reg, ifi );
+            }
+
+            return;
+        }
+
+        // Load from stack first
+        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
+        put_reg_imm( AOC::MovFromStack, dest_reg, addr_offset, ifi );
     };
-    auto put_asm_ex_reg = [&]( const String &mnemonic, const String &ex,
-                               RegId r, bool r_writeback ) {
-        auto r_name = stack_preface( r );
-        assembly += mnemonic + " " + ex + ", " + r_name + "\n";
-        stack_epilog( r, r_name, r_writeback );
-    };
-    auto put_asm_reg = [&]( const String &mnemonic, RegId r,
-                            bool r_writeback ) {
-        auto r_name = stack_preface( r );
-        assembly += mnemonic + " " + r_name + "\n";
-        stack_epilog( r, r_name, r_writeback );
+    // Write back to stack if necessary
+    auto writeback_opt = [&]( VarId to_var, HwReg src_reg,
+                              const InFileInfo &ifi ) {
+        RegId reg = mir.reg_mapping[to_var];
+        if ( reg < virtual_stack_start_reg ) {
+            if ( to_hw_reg( reg ) != src_reg ) {
+                // Copy back into original register.
+                put_reg_reg( AOC::Mov, to_hw_reg( reg ), src_reg, ifi );
+            }
+
+            return;
+        }
+
+        // Write back to stack
+        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
+        put_src_reg_imm( AOC::MovToStack, src_reg, addr_offset, ifi );
     };
 
     // Add preamble
-    assembly += String( asm_preamble ) + "\n";
+    put_str( AOC::Global, "main", no_ifi );
+    put_str( AOC::Global, "_main", no_ifi );
+    put_empty( AOC::Text, no_ifi );
+    put_label( "main", no_ifi );
+    put_str( AOC::Call, "_main", no_ifi );
+    put_reg_reg( AOC::Mov, HwReg::edi, HwReg::eax, no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::eax, 0x3c, no_ifi );
+    put_empty( AOC::Syscall, no_ifi );
+    put_label( "_main", no_ifi );
 
     // Add main "function" preface
-    put_asm( "enter $" +
-             to_string( 4 * ( mir.reg_count -
-                              std::min( mir.reg_count, stack_start_reg ) ) ) +
-             ", $0" );
+    put_imm( AOC::Enter,
+             4 * ( mir.reg_count -
+                   std::min( mir.reg_count, virtual_stack_start_reg ) ),
+             no_ifi );
 
     // Add all instructions
 #ifdef AMS_CODE_LINE_COMMENTS
@@ -170,54 +197,160 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         size_t ln = line_from_offset( clean_source, instr.ifi.offset );
         if ( static_cast<ssize_t>( ln ) != curr_line ) {
             curr_line = ln;
-            assembly += "/*=> " + source_lines[ln] + " */\n";
+            put_comment( "=> " + source_lines[ln], instr.ifi );
         }
         if ( instr.ifi != curr_ifi ) {
             curr_ifi = instr.ifi;
-            assembly += "/* " +
-                        clean_source.substr( curr_ifi.offset, curr_ifi.size ) +
-                        " */\n";
+            put_comment( clean_source.substr( curr_ifi.offset, curr_ifi.size ),
+                         instr.ifi );
         }
 #endif
 
         // Actual instructions
         if ( instr.type == MT::Const ) {
-            put_asm_ex_reg( "movl", "$" + to_string( instr.imm ), instr.result,
-                            true );
+            put_reg_imm( AOC::MovConst, HwReg::eax, instr.imm, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Mov ) {
-            put_asm_reg_reg( "movl", instr.p0, instr.result, false, true );
+            auto src_reg = make_available( instr.p0, instr.ifi );
+            writeback_opt( instr.result, src_reg, instr.ifi );
         } else if ( instr.type == MT::Add ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm_reg_ex( "addl", instr.p1, "%eax", false );
-            put_asm_ex_reg( "movl", "%eax", instr.result, true );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            auto rhs_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::Add, HwReg::eax, rhs_reg, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Sub ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm_reg_ex( "subl", instr.p1, "%eax", false );
-            put_asm_ex_reg( "movl", "%eax", instr.result, true );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            auto rhs_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::Sub, HwReg::eax, rhs_reg, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Mul ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm_reg_ex( "imull", instr.p1, "%eax", false );
-            put_asm_ex_reg( "movl", "%eax", instr.result, true );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            auto rhs_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, rhs_reg, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Div ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm( "cltd" );
-            put_asm_reg( "idivl", instr.p1, false );
-            put_asm_ex_reg( "movl", "%eax", instr.result, true );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            auto rhs_reg = make_available( instr.p1, instr.ifi );
+            put_empty( AOC::Cltd, instr.ifi );
+            put_reg_reg( AOC::IDiv, HwReg::eax, rhs_reg, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Mod ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm( "cltd" );
-            put_asm_reg( "idivl", instr.p1, false );
-            put_asm_ex_reg( "movl", "%edx", instr.result, true );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            auto rhs_reg = make_available( instr.p1, instr.ifi );
+            put_empty( AOC::Cltd, instr.ifi );
+            put_reg_reg( AOC::IDiv, HwReg::eax, rhs_reg, instr.ifi );
+            writeback_opt( instr.result, HwReg::edx, instr.ifi );
         } else if ( instr.type == MT::Ret ) {
-            put_asm_reg_ex( "movl", instr.p0, "%eax", false );
-            put_asm( "leave" );
-            put_asm( "ret" );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            put_empty( AOC::Leave, instr.ifi );
+            put_empty( AOC::Ret, instr.ifi );
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(
                 state,
                 "Unknown mir instruction. This is probably an compiler bug.",
                 instr.ifi, RetCode::InternalError );
+        }
+    } );
+}
+
+void generate_asm_text_x86( CompilerState &state,
+                            const EagerContainer<Assembly_x86> &assembly,
+                            String &out ) {
+    auto put_asm = [&]( const String &content ) { out += content + "\n"; };
+
+    auto to_reg_str = []( HwReg reg ) -> String {
+        switch ( reg ) {
+        case HwReg::eax:
+            return "%eax";
+        case HwReg::ebx:
+            return "%ebx";
+        case HwReg::ecx:
+            return "%ecx";
+        case HwReg::edx:
+            return "%edx";
+        case HwReg::edi:
+            return "%edi";
+        case HwReg::esi:
+            return "%esi";
+        case HwReg::ebp:
+            return "%ebp";
+        case HwReg::esp:
+            return "%esp";
+        case HwReg::r8d:
+            return "%r8d";
+        case HwReg::r9d:
+            return "%r9d";
+        case HwReg::r10d:
+            return "%r10d";
+        case HwReg::r11d:
+            return "%r11d";
+        case HwReg::r12d:
+            return "%r12d";
+        case HwReg::r13d:
+            return "%r13d";
+        case HwReg::r14d:
+            return "%r14d";
+        case HwReg::r15d:
+            return "%r15d";
+        default:
+            return "%noreg";
+        }
+    };
+
+    auto make_reg_reg_op = [&]( const String &cmd, const Assembly_x86 &op ) {
+        put_asm( cmd + " " + to_reg_str( op.src ) + ", " +
+                 to_reg_str( op.dest ) );
+    };
+
+    // Generate assembly code
+    assembly.for_each( [&]( const Assembly_x86 &op ) {
+        if ( op.opcode == AOC::Comment ) {
+            put_asm( "/* " + op.str + " */" );
+        } else if ( op.opcode == AOC::Global ) {
+            put_asm( ".global " + op.str );
+        } else if ( op.opcode == AOC::Text ) {
+            put_asm( ".text" );
+        } else if ( op.opcode == AOC::Label ) {
+            put_asm( op.str + ":" );
+        } else if ( op.opcode == AOC::Nop ) {
+            put_asm( "nop" );
+        } else if ( op.opcode == AOC::Call ) {
+            put_asm( "call " + op.str );
+        } else if ( op.opcode == AOC::Mov ) {
+            make_reg_reg_op( "movl", op );
+        } else if ( op.opcode == AOC::MovConst ) {
+            put_asm( "movl $" + to_string( op.imm ) + ", " +
+                     to_reg_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovFromStack ) {
+            put_asm( "movl " + to_string( op.imm ) + "(%rbp), " +
+                     to_reg_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovToStack ) {
+            put_asm( "movl " + to_reg_str( op.src ) + ", " +
+                     to_string( op.imm ) + "(%rbp)" );
+        } else if ( op.opcode == AOC::Syscall ) {
+            put_asm( "syscall" );
+        } else if ( op.opcode == AOC::Add ) {
+            make_reg_reg_op( "addl", op );
+        } else if ( op.opcode == AOC::Sub ) {
+            make_reg_reg_op( "subl", op );
+        } else if ( op.opcode == AOC::IMul ) {
+            make_reg_reg_op( "imull", op );
+        } else if ( op.opcode == AOC::IDiv ) {
+            make_reg_reg_op( "idivl", op );
+        } else if ( op.opcode == AOC::Cltd ) {
+            put_asm( "cltd" );
+        } else if ( op.opcode == AOC::Ret ) {
+            put_asm( "ret" );
+        } else if ( op.opcode == AOC::Enter ) {
+            put_asm( "enter $" + to_string( op.imm ) + ", $0" );
+        } else if ( op.opcode == AOC::Leave ) {
+            put_asm( "leave" );
+        } else {
+            make_error_msg(
+                state,
+                "Found invalid x86 instruction. This is an internal error.",
+                op.ifi, RetCode::InternalError );
         }
     } );
 }

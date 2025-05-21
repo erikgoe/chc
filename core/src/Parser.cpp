@@ -233,6 +233,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     AstNode root_node = parse_parens( itr, "", InFileInfo{} );
     root_node.type = AT::GlobalScope;
 
+    //print_ast( root_node, "=After parens" ); // DEBUG
+
     // Prefix "-" operator
     apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
@@ -323,7 +325,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // print_ast( root_node, "After ops"  ); // DEBUG
+    // print_ast( root_node, "=After ops" ); // DEBUG
 
     // Statements
     apply_pass_recursively_from_left(
@@ -361,7 +363,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // print_ast( root_node, "After statements"  ); // DEBUG
+    // print_ast( root_node, "=After statements"  ); // DEBUG
 
     // Semicolons
     apply_pass_recursively_from_left(
@@ -382,7 +384,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // print_ast( root_node, "After semicolons"  ); // DEBUG
+    // print_ast( root_node, "=After semicolons"  ); // DEBUG
 
     // Function definitions
     apply_pass_recursively_from_left(

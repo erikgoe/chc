@@ -144,7 +144,8 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( MI{} );
+        auto none = MI{};
+        auto &next = itr.skip( 1 ).get_or( none );
 
         if ( instr.p0 != 0 ) {
             instr.life.insert( instr.p0 );
@@ -172,7 +173,8 @@ void analyze_neededness( CompilerState &state, Mir &mir ) {
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( MI{} );
+        auto none = MI{};
+        auto &next = itr.skip( 1 ).get_or( none );
 
         if ( has_effect( mir, instr ) ) {
             // Operations with some effect make their parameters needed.
@@ -206,7 +208,8 @@ void trim_dead_code( CompilerState &state, Mir &mir ) {
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( MI{} );
+        auto none = MI{};
+        auto &next = itr.skip( 1 ).get_or( none );
         if ( !has_effect( mir, instr ) &&
              next.needed.find( instr.result ) == next.needed.end() ) {
             // Result is not needed and therefore this line is dead code.
