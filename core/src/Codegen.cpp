@@ -43,7 +43,7 @@ size_t line_from_offset( const String &str, size_t offset ) {
 void generate_code_x86( CompilerState &state, const String &original_source,
                         Mir &mir, EagerContainer<Assembly_x86> &assembly ) {
     constexpr HwReg no_reg = HwReg::None;
-    RegId virtual_stack_start_reg = 11; // DEBUG
+    RegId virtual_stack_start_reg = 12; // DEBUG
     InFileInfo no_ifi;
 
     // Source code lines
@@ -92,27 +92,27 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         } else {
             // Map normal registers
             switch ( reg ) {
-            case 0:
-                return HwReg::ebx;
             case 1:
-                return HwReg::ecx;
+                return HwReg::ebx;
             case 2:
-                return HwReg::esi;
+                return HwReg::ecx;
             case 3:
-                return HwReg::edi;
+                return HwReg::esi;
             case 4:
-                return HwReg::r8d;
+                return HwReg::edi;
             case 5:
-                return HwReg::r9d;
+                return HwReg::r8d;
             case 6:
-                return HwReg::r11d;
+                return HwReg::r9d;
             case 7:
-                return HwReg::r12d;
+                return HwReg::r11d;
             case 8:
-                return HwReg::r13d;
+                return HwReg::r12d;
             case 9:
-                return HwReg::r14d;
+                return HwReg::r13d;
             case 10:
+                return HwReg::r14d;
+            case 11:
                 return HwReg::r15d;
             default:
                 return HwReg::None;

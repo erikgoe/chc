@@ -14,6 +14,37 @@ using RegId = Mir::RegId;
 
 using namespace AstNodeFacades;
 
+/// An efficient representation of an inference graph (runtime-wise; not
+/// memory-wise).
+class InferenceGraph {
+    std::vector<bool> cont;
+    size_t var_count = 0;
+
+public:
+    InferenceGraph( size_t var_count ) : var_count( var_count ) {
+        cont.resize( var_count * var_count );
+    }
+    void set_inference( VarId a, VarId b ) {
+        cont[a * var_count + b] = true;
+        cont[b * var_count + a] = true;
+    }
+    size_t neighbor_count( VarId a ) {
+        size_t count = 0;
+        for ( size_t i = a * var_count; i < a * ( var_count + 1 ); i++ ) {
+            if ( cont[i] )
+                ++count;
+        }
+        return count;
+    }
+    void for_all_neighbors( VarId a,
+                            std::function<void( VarId neighbor )> func ) const {
+        for ( size_t i = a * var_count; i < a * ( var_count + 1 ); i++ ) {
+            if ( cont[i] )
+                func( i - a * var_count );
+        }
+    }
+};
+
 String name_of_instr( Mir::MirInstr::Type type ) {
     switch ( type ) {
     case Mir::MirInstr::Type::None:
@@ -141,10 +172,10 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
 
 void analyze_liveness( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
+    auto none = MI{};
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto none = MI{};
         auto &next = itr.skip( 1 ).get_or( none );
 
         if ( instr.p0 != 0 ) {
@@ -170,10 +201,10 @@ bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
 
 void analyze_neededness( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
+    auto none = MI{};
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto none = MI{};
         auto &next = itr.skip( 1 ).get_or( none );
 
         if ( has_effect( mir, instr ) ) {
@@ -205,10 +236,10 @@ void analyze_neededness( CompilerState &state, Mir &mir ) {
 
 void trim_dead_code( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
+    auto none = MI{};
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto none = MI{};
         auto &next = itr.skip( 1 ).get_or( none );
         if ( !has_effect( mir, instr ) &&
              next.needed.find( instr.result ) == next.needed.end() ) {
@@ -219,23 +250,21 @@ void trim_dead_code( CompilerState &state, Mir &mir ) {
     // TODO same as analyze_liveness() does not account for jumps yet!
 }
 
-void create_inference_graph(
-    CompilerState &state, Mir &mir,
-    std::map<VarId, std::set<VarId>> &inference_graph ) {
+void create_inference_graph( CompilerState &state, Mir &mir,
+                             InferenceGraph &inference_graph ) {
     // Every pair is included twice, because it is an undirected graph.
     mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
         for ( auto v0 : instr.life ) {
             for ( auto v1 : instr.life ) {
                 if ( v0 != v1 )
-                    inference_graph[v0].insert( v1 );
+                    inference_graph.set_inference( v0, v1 );
             }
         }
     } );
 }
 
 void create_simplicial_elimination_ordering(
-    CompilerState &state, Mir &mir,
-    const std::map<VarId, std::set<VarId>> &inference_graph,
+    CompilerState &state, Mir &mir, const InferenceGraph &inference_graph,
     std::vector<VarId> &ordering ) {
     std::map<VarId, size_t> wv; // Weighted vertices TODO use make_heap
     for ( size_t i = 0; i < mir.next_var; i++ )
@@ -250,38 +279,43 @@ void create_simplicial_elimination_ordering(
         ordering.push_back( max_v_itr->first );
 
         // Increment weight of remaining neighbors (if there are any)
-        if ( inference_graph.find( max_v_itr->first ) !=
-             inference_graph.end() ) {
-            for ( auto neighbor : inference_graph.at( max_v_itr->first ) ) {
+        inference_graph.for_all_neighbors(
+            max_v_itr->first, [&]( VarId neighbor ) {
                 if ( wv.find( neighbor ) != wv.end() )
                     ++wv[neighbor];
-            }
-        }
+            } );
 
         wv.erase( max_v_itr );
     }
 }
 
 void create_register_mapping( CompilerState &state, Mir &mir ) {
-    std::map<VarId, std::set<VarId>> inference_graph;
+    InferenceGraph inference_graph( mir.next_var );
     std::vector<VarId> ordering;
     create_inference_graph( state, mir, inference_graph );
     create_simplicial_elimination_ordering( state, mir, inference_graph,
                                             ordering );
+    mir.reg_mapping.resize(
+        mir.next_var ); // Every variable could get a mapping.
 
     // Greedy register allocation
+    std::vector<bool> reg_candidates_occupied;
     for ( size_t i = 0; i < ordering.size(); i++ ) {
         auto v = ordering[i];
-        auto &neighbors = inference_graph[v];
 
         // Find smallest register (color) which no other neighbor uses
-        RegId r = 0;
-        while (
-            std::find_if( neighbors.begin(), neighbors.end(), [&]( auto &&n ) {
-                return mir.reg_mapping.find( n ) != mir.reg_mapping.end() &&
-                       mir.reg_mapping[n] == r;
-            } ) != neighbors.end() ) {
-            ++r;
+        size_t count = inference_graph.neighbor_count( v );
+        RegId r =
+            std::max<size_t>( 1, count ); // Zero would be an invalid register.
+        reg_candidates_occupied.assign( count + 2, false );
+        inference_graph.for_all_neighbors( v, [&]( auto &&neighbor ) {
+            RegId r = mir.reg_mapping.at( neighbor );
+            if ( r > 0 && r <= count + 1 )
+                reg_candidates_occupied[r] = true;
+        } );
+        for ( size_t i = 1; i < reg_candidates_occupied.size(); i++ ) {
+            if ( !reg_candidates_occupied[i] )
+                r = i;
         }
 
         mir.reg_mapping[v] = r;
@@ -293,8 +327,10 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
 #ifndef NDEBUG
     if ( true ) {
         log( "== MIR REGS ==" );
+        size_t i = 0;
         for ( auto p : mir.reg_mapping ) {
-            olog( to_string( p.first ) + " => " + to_string( p.second ) );
+            olog( to_string( i ) + " => " + to_string( p ) );
+            i++;
         }
     }
 #endif

@@ -7,7 +7,7 @@ namespace chc {
 /// Intermediate language that is close to assembly
 struct Mir {
     using VarId = size_t;
-    using RegId = size_t;
+    using RegId = size_t; // Zero is defined as invalid register
 
     struct MirInstr {
         enum class Type {
@@ -42,7 +42,7 @@ struct Mir {
     std::map<SymbolId, VarId> var_map;
     VarId next_var = 0;
 
-    std::map<VarId, RegId> reg_mapping;
+    std::vector<RegId> reg_mapping;
     RegId reg_count = 0; // Maximum used registers
 };
 
@@ -50,7 +50,7 @@ void analyze_liveness( CompilerState &state, Mir &mir );
 
 void analyze_neededness( CompilerState &state, Mir &mir );
 
-void trim_dead_code(CompilerState &state, Mir &mir );
+void trim_dead_code( CompilerState &state, Mir &mir );
 
 void create_register_mapping( CompilerState &state, Mir &mir );
 

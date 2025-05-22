@@ -1,5 +1,6 @@
 build/
-test/code/test.l1
+test/code/test.c
 test/code/out.s
 test/code/out
 /chc
+callgrind.out.*
