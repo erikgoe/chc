@@ -22,8 +22,8 @@ String AstNode::get_type_name() const {
         return "Decl";
     case AstNode::Type::DeclUninit:
         return "DeclUninit";
-    case AstNode::Type::Simp:
-        return "Simp";
+    case AstNode::Type::AsnOp:
+        return "AsnOp";
     case AstNode::Type::Ident:
         return "Ident";
     case AstNode::Type::Paren:
@@ -115,7 +115,7 @@ bool is_expr( const AstNode &node ) {
 
 bool is_stmt_body( const AstNode &node ) {
     return node.type == AT::Decl || node.type == AT::DeclUninit ||
-           node.type == AT::Simp || node.type == AT::Ret;
+           node.type == AT::AsnOp || node.type == AT::Ret;
 }
 
 bool is_lvalue( const AstNode &node ) {
@@ -318,7 +318,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     itr.erase_self();
                     // Replace with merged token
                     itr.get() =
-                        make_merged_node( AT::Simp, *op.tok, { lhs, rhs } );
+                        make_merged_node( AT::AsnOp, *op.tok, { lhs, rhs } );
                     return true;
                 }
             }
@@ -334,7 +334,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto lhs = itr.get();
             auto opr = itr.skip( 1 ).get_or( ast( AT::None ) );
             if ( itr.match( ast_tok( TT::Keyword, "int" ),
-                            ast_with_tok( AT::Simp, TT::Operator, "=",
+                            ast_with_tok( AT::AsnOp, TT::Operator, "=",
                                           ast( AT::Ident ) ) ) ) {
                 // Is "int <ident> = <expr>"
                 // Remove one consumed element.

@@ -17,7 +17,7 @@ struct AstNode {
         Ret,
         Decl,
         DeclUninit,
-        Simp,
+        AsnOp,
         Ident,
         Paren,
         Block,

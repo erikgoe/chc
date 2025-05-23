@@ -90,22 +90,22 @@ public:
         if ( matches ) {
             type = to_wrap.nodes->first()->get().tok->content;
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
-            auto simp_itr = itr.get().nodes->itr();
-            symbol = simp_itr.get().tok->content;
-            symbol_id = simp_itr.get().symbol_id;
-            init = simp_itr.skip( 1 ).get();
+            auto asnop_itr = itr.get().nodes->itr();
+            symbol = asnop_itr.get().tok->content;
+            symbol_id = asnop_itr.get().symbol_id;
+            init = asnop_itr.skip( 1 ).get();
         }
     }
     void update_symbol_id( AstNode &wrapped_node, SymbolId new_id ) {
         auto itr = wrapped_node.nodes->first()->get().nodes->itr();
-        auto simp_itr = itr.get().nodes->itr();
-        simp_itr.get().symbol_id = new_id;
+        auto asnop_itr = itr.get().nodes->itr();
+        asnop_itr.get().symbol_id = new_id;
         symbol_id = new_id;
     }
     AstNode &ref_init( AstNode &wrapped_node ) {
         auto itr = wrapped_node.nodes->first()->get().nodes->itr();
-        auto simp_itr = itr.get().nodes->itr();
-        return simp_itr.skip( 1 ).get();
+        auto asnop_itr = itr.get().nodes->itr();
+        return asnop_itr.skip( 1 ).get();
     }
 
     String type;
@@ -138,11 +138,11 @@ public:
     Opt<SymbolId> symbol_id;
 };
 
-class SimpStmt : public FacadeBase {
+class AsnOpStmt : public FacadeBase {
 public:
-    SimpStmt( AstNode &to_wrap ) {
+    AsnOpStmt( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::Stmt &&
-                  to_wrap.nodes->first()->get().type == AstNode::Type::Simp;
+                  to_wrap.nodes->first()->get().type == AstNode::Type::AsnOp;
         if ( matches ) {
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
             // TODO check that parenthesis has only one subnode

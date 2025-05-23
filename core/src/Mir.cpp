@@ -106,7 +106,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto decl = DeclUninitStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id.value()] = variable;
-    } else if ( auto stmt = SimpStmt( node ) ) {
+    } else if ( auto stmt = AsnOpStmt( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
         VarId variable = mir.var_map[symbol_id_of_lvalue( state, stmt.lvalue )];

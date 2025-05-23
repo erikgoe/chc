@@ -204,31 +204,31 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
         state, *root_node.nodes, root_node,
         [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto &node = itr.get();
-            if ( auto simp = SimpStmt( node ) ) {
-                // Translate combined simp into explicit operation.
-                if ( simp.type == ArithType::Add ||
-                     simp.type == ArithType::Sub ||
-                     simp.type == ArithType::Mul ||
-                     simp.type == ArithType::Div ||
-                     simp.type == ArithType::Mod ) {
-                    auto simp_tok = node.nodes->first().value().get().tok;
+            if ( auto asnop = AsnOpStmt( node ) ) {
+                // Translate combined asnop into explicit operation.
+                if ( asnop.type == ArithType::Add ||
+                     asnop.type == ArithType::Sub ||
+                     asnop.type == ArithType::Mul ||
+                     asnop.type == ArithType::Div ||
+                     asnop.type == ArithType::Mod ) {
+                    auto asnop_tok = node.nodes->first().value().get().tok;
 
                     // Inner operation
                     auto inner_node = AstNode{ AT::BinOp };
                     inner_node.nodes = std::make_shared<AstCont>();
-                    inner_node.nodes->put( simp.lvalue );
-                    inner_node.nodes->put( simp.value );
-                    inner_node.tok = simp_tok;
+                    inner_node.nodes->put( asnop.lvalue );
+                    inner_node.nodes->put( asnop.value );
+                    inner_node.tok = asnop_tok;
                     inner_node.tok->content =
                         inner_node.tok->content.substr( 0, 1 );
                     inner_node.ifi = inner_node.tok->ifi;
 
                     // Outer node
-                    auto outer_node = AstNode{ AT::Simp };
+                    auto outer_node = AstNode{ AT::AsnOp };
                     outer_node.nodes = std::make_shared<AstCont>();
-                    outer_node.nodes->put( simp.lvalue );
+                    outer_node.nodes->put( asnop.lvalue );
                     outer_node.nodes->put( inner_node );
-                    outer_node.tok = simp_tok;
+                    outer_node.tok = asnop_tok;
                     outer_node.tok->content =
                         outer_node.tok->content.substr( 1, 1 );
                     outer_node.ifi = outer_node.tok->ifi;
@@ -238,7 +238,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     return true;
                 }
             }
-            // TODO check if future specifications also only allow simp as
+            // TODO check if future specifications also only allow asnop as
             // statement and not as expression (which would not match here).
             return false;
         } );
