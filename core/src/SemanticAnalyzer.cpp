@@ -240,6 +240,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
         state, *root_node.nodes, root_node,
         [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto &node = itr.get();
+            // TODO check if future specifications also only allow asnop as
+            // statement and not as expression (which would not match here).
             if ( auto asnop = AsnOpStmt( node ) ) {
                 // Translate combined asnop into explicit operation.
                 if ( asnop.type == ArithType::Add ||
@@ -273,9 +275,44 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     itr.get().nodes->itr().get() = outer_node;
                     return true;
                 }
+            } else if ( auto binop = BinOp( node ) ) {
+                // Translate short-circuit operators to ternary operator.
+                // Bool constant
+                auto const_true =
+                    AstNode{ AT::BoolConst,
+                             {},
+                             Token{ Token::Type::Keyword, "true", node.ifi },
+                             {},
+                             node.ifi };
+                if ( binop.type == ArithType::LAnd ) {
+                    // Ternary operator
+                    auto tern_op = AstNode{ AT::TernOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( binop.lhs );
+                    tern_op.nodes->put( binop.rhs );
+                    tern_op.nodes->put( const_true );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "?";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                    return true;
+                } else if ( binop.type == ArithType::LOr ) {
+                    // Ternary operator
+                    auto tern_op = AstNode{ AT::TernOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( binop.lhs );
+                    tern_op.nodes->put( const_true );
+                    tern_op.nodes->put( binop.rhs );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "?";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                }
             }
-            // TODO check if future specifications also only allow asnop as
-            // statement and not as expression (which would not match here).
             return false;
         } );
 
