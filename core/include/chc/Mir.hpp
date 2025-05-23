@@ -36,6 +36,8 @@ struct Mir {
 
         std::set<VarId> life;
         std::set<VarId> needed; // Needed variables
+        
+        String type_name() const;
     };
 
     EagerContainer<MirInstr> instrs;

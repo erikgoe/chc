@@ -45,7 +45,7 @@ public:
     }
 };
 
-String name_of_instr( Mir::MirInstr::Type type ) {
+String Mir::MirInstr::type_name() const {
     switch ( type ) {
     case Mir::MirInstr::Type::None:
         return "None";
@@ -355,7 +355,7 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     if ( true ) {
         log( "== MIR INSTRS ==" );
         mir.instrs.for_each( []( const Mir::MirInstr &instr ) {
-            String str = name_of_instr( instr.type ) + " " +
+            String str = instr.type_name() + " " +
                          to_string( instr.result ) + " " +
                          to_string( instr.p0 ) + " " + to_string( instr.p1 ) +
                          " c" + to_string( instr.imm );
