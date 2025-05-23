@@ -348,6 +348,10 @@ public:
             type = map_bin_arith( type_str );
         }
     }
+    void update_arith_type( AstNode &wrapped_node, ArithType new_type ) {
+        auto &type_str = wrapped_node.tok->content;
+        type_str = map_bin_arith( new_type );
+    }
 
     AstNode lhs;
     AstNode rhs;

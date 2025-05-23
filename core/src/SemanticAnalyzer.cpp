@@ -352,7 +352,6 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     return true;
                 }
             } else if ( auto bin_op = BinOp( node ) ) {
-                // Translate short-circuit operators to ternary operator.
                 // Bool constant
                 auto const_true =
                     AstNode{ AT::BoolConst,
@@ -360,8 +359,14 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                              Token{ Token::Type::Keyword, "true", node.ifi },
                              {},
                              node.ifi };
+                auto const_false =
+                    AstNode{ AT::BoolConst,
+                             {},
+                             Token{ Token::Type::Keyword, "false", node.ifi },
+                             {},
+                             node.ifi };
                 if ( bin_op.type == ArithType::LAnd ) {
-                    // Ternary operator
+                    // Translate short-circuit "&&" to ternary operator.
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
                     tern_op.nodes->put( bin_op.lhs );
@@ -375,7 +380,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     itr.get() = tern_op;
                     return true;
                 } else if ( bin_op.type == ArithType::LOr ) {
-                    // Ternary operator
+                    // Translate short-circuit "||" to ternary operator.
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
                     tern_op.nodes->put( bin_op.lhs );
@@ -387,6 +392,34 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
 
                     // Replace
                     itr.get() = tern_op;
+                    return true;
+                } else if ( bin_op.type == ArithType::UnEq ||
+                            bin_op.type == ArithType::Greater ||
+                            bin_op.type == ArithType::GreaterEq ) {
+                    // Translate comparison operators into corresponding
+                    // inverted versions.
+
+                    // Inverted operation
+                    if ( bin_op.type == ArithType::UnEq ) {
+                        bin_op.update_arith_type( node, ArithType::Eq );
+                    } else if ( bin_op.type == ArithType::Greater ) {
+                        bin_op.update_arith_type( node, ArithType::LessEq );
+                    } else if ( bin_op.type == ArithType::GreaterEq ) {
+                        bin_op.update_arith_type( node, ArithType::Less );
+                    }
+
+                    auto tern_op = AstNode{ AT::TernOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( node );
+                    tern_op.nodes->put( const_false );
+                    tern_op.nodes->put( const_true );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "?";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                    return true;
                 }
             }
             return false;
