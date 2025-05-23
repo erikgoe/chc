@@ -53,10 +53,11 @@ struct AstNode {
         return *this;
     }
 
+    String get_type_name() const;
     operator bool() const { return matching_valid; }
 };
 
-AstNode make_parser( CompilerState &state,
-                                     EagerContainer<Token> &tokens );
+
+AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens );
 
 } // namespace chc

@@ -249,7 +249,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
     if ( false ) {
         std::function<void( const AstNode &, size_t )> print_node;
         print_node = [&]( const AstNode &n, size_t indent ) {
-            String str = String( indent, ' ' ) + name_of_type( n.type ) +
+            String str = String( indent, ' ' ) + n.get_type_name() +
                          ( n.tok ? ": " + n.tok->content : "" );
             olog( str );
             if ( n.nodes )
