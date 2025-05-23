@@ -77,6 +77,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
     analyze_block = [&]( AstNode &node ) {
         auto &ps = prev_stack.back();
 
+        // Utility functions
         auto match_new_symbol = [&]( const String &symbol, InFileInfo ifi ) {
             auto present_sym = symbol_map.find( symbol );
             if ( present_sym != symbol_map.end() ) {
@@ -99,6 +100,18 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
                 ps.missing_symbols.push_back( symbol );
             }
             return next_symbol - 1; // Returns the new symbol's id (if any)
+        };
+        auto push_var_stack = [&]() {
+            prev_stack.push_back( SymbolStackEntry{ next_symbol } );
+        };
+        auto pop_var_stack = [&]() {
+            for ( auto &entry : prev_stack.back().symbols ) {
+                symbol_map[entry.first] = entry.second;
+            }
+            for ( auto &entry : prev_stack.back().missing_symbols ) {
+                symbol_map.erase( entry );
+            }
+            prev_stack.pop_back();
         };
 
         // Check node
@@ -130,7 +143,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             }
         } else if ( auto block = Block( node ) ) {
             // Blocks create new scopes
-            prev_stack.push_back( SymbolStackEntry{ next_symbol } );
+            push_var_stack();
 
             auto itr = block.children.itr();
             while ( itr ) {
@@ -138,15 +151,36 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
                 itr.skip_self( 1 );
             }
 
-            // Revert symbol table changes
-            for ( auto &entry : prev_stack.back().symbols ) {
-                symbol_map[entry.first] = entry.second;
-            }
-            for ( auto &entry : prev_stack.back().missing_symbols ) {
-                symbol_map.erase( entry );
-            }
-            prev_stack.pop_back();
+            pop_var_stack();
+        } else if ( auto if_stmt = IfStmt( node ) ) {
+            // New scope in true_stmt
+            analyze_block( if_stmt.cond );
+            push_var_stack();
+            analyze_block( if_stmt.true_stmt );
+            pop_var_stack();
 
+            // Optionally the same for the false_statement
+            if ( if_stmt.false_stmt.type != AT::None ) {
+                push_var_stack();
+                analyze_block( if_stmt.false_stmt );
+                pop_var_stack();
+            }
+        } else if ( auto while_loop = WhileLoop( node ) ) {
+            // New scope in while body
+            analyze_block( while_loop.cond );
+            push_var_stack();
+            analyze_block( while_loop.body );
+            pop_var_stack();
+        } else if ( auto for_loop = ForLoop( node ) ) {
+            // For loops actually have two scopes
+            push_var_stack();
+            analyze_block( for_loop.init );
+            push_var_stack();
+            analyze_block( for_loop.cond );
+            analyze_block( for_loop.body );
+            analyze_block( for_loop.step );
+            pop_var_stack();
+            pop_var_stack();
         } else if ( auto fn_def = FunctionDef( node ) ) {
             analyze_block( node.nodes->itr().skip( 2 ).get() );
             SymbolId new_id = match_new_symbol( fn_def.fn_symbol, node.ifi );
@@ -166,36 +200,6 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
 
     // Iterate root node
     analyze_block( root_node );
-
-    // Check if all symbols were matched
-    if ( state.success ) {
-        apply_pass_recursively_from_left(
-            state, *root_node.nodes, root_node,
-            []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-                auto node = itr.get();
-                if ( node.type == AT::Ident && !node.symbol_id.has_value() )
-                    make_error_msg( state, "Could not calculate id for symbol.",
-                                    node.ifi, RetCode::SemanticError );
-                return false;
-            } );
-    }
-
-    // Check if return statement exists
-    if ( state.success ) {
-        bool found_return = false;
-        apply_pass_recursively_from_left(
-            state, *root_node.nodes, root_node,
-            [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-                auto node = itr.get();
-                if ( node.type == AT::Ret )
-                    found_return = true;
-                return false;
-            } );
-        if ( !found_return ) {
-            make_error_msg( state, "No return statement found.", InFileInfo{},
-                            RetCode::SemanticError );
-        }
-    }
 }
 
 void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {

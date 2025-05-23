@@ -772,16 +772,18 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         valid = true;
                     }
                 }
-                if ( valid ) {
+                auto step_type = paren.nodes->itr().skip( 2 ).get().type;
+                if ( valid && step_type != AT::Decl &&
+                     step_type != AT::DeclUninit ) {
                     // Remove two consumed elements.
                     itr.erase_self();
                     itr.erase_self();
-                }
 
-                // Replace with merged token
-                itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
-                                              { paren, block } );
-                return true;
+                    // Replace with merged token
+                    itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
+                                                  { paren, block } );
+                    return true;
+                }
             }
             return false;
         } );
