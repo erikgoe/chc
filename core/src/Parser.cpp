@@ -36,6 +36,24 @@ String AstNode::get_type_name() const {
         return "BinOp";
     case AstNode::Type::UniOp:
         return "UniOp";
+    case AstNode::Type::Type:
+        return "Type";
+    case AstNode::Type::IfStmt:
+        return "IfStmt";
+    case AstNode::Type::IfElseStmt:
+        return "IfElseStmt";
+    case AstNode::Type::WhileLoop:
+        return "WhileLoop";
+    case AstNode::Type::ForLoop:
+        return "ForLoop";
+    case AstNode::Type::ContinueStmt:
+        return "ContinueStmt";
+    case AstNode::Type::BreakStmt:
+        return "BreakStmt";
+    case AstNode::Type::BoolConst:
+        return "BoolConst";
+    case AstNode::Type::TernOp:
+        return "TernOp";
     default:
         return "Unknown";
     }
@@ -110,12 +128,14 @@ bool is_expr( const AstNode &node ) {
     return ( node.type == AT::Paren && !node.nodes->empty() &&
              is_expr( node.nodes->first()->get() ) ) ||
            node.type == AT::IntConst || node.type == AT::Ident ||
-           node.type == AT::BinOp || node.type == AT::UniOp;
+           node.type == AT::BinOp || node.type == AT::UniOp ||
+           node.type == AT::BoolConst || node.type == AT::TernOp;
 }
 
 bool is_stmt_body( const AstNode &node ) {
     return node.type == AT::Decl || node.type == AT::DeclUninit ||
-           node.type == AT::AsnOp || node.type == AT::Ret;
+           node.type == AT::AsnOp || node.type == AT::Ret ||
+           node.type == AT::BreakStmt || node.type == AT::ContinueStmt;
 }
 
 bool is_lvalue( const AstNode &node ) {
@@ -126,8 +146,11 @@ bool is_lvalue( const AstNode &node ) {
 
 bool is_function_body( const AstNode &node ) {
     return node.type == AT::Block && node.nodes &&
-           node.nodes->all(
-               []( const AstNode &n ) { return n.type == AT::Stmt; } );
+           node.nodes->all( []( const AstNode &n ) {
+               return n.type == AT::Stmt || n.type == AT::Block ||
+                      n.type == AT::IfStmt || n.type == AT::WhileLoop ||
+                      n.type == AT::ForLoop;
+           } );
 }
 
 AstNode make_merged_node( AT type, Token main_token,
@@ -233,9 +256,46 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     AstNode root_node = parse_parens( itr, "", InFileInfo{} );
     root_node.type = AT::GlobalScope;
 
-    //print_ast( root_node, "=After parens" ); // DEBUG
+    // print_ast( root_node, "=After parens" ); // DEBUG
 
-    // Prefix "-" operator
+    // Type literals
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto ident = itr.get();
+            if ( parent.type == AT::Type )
+                return false;
+            if ( ident.match( ast_tok( TT::Keyword, "int" ) ) ||
+                 ident.match( ast_tok( TT::Keyword, "bool" ) ) ) {
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::Type, *ident.tok, { ident } );
+                return true;
+            }
+            return false;
+        } );
+
+    // "break" & "continue"
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto ident = itr.get();
+            if ( parent.type != AT::BreakStmt &&
+                 ident.match( ast_tok( TT::Identifier, "break" ) ) ) {
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::BreakStmt, *ident.tok, { ident } );
+                return true;
+            } else if ( parent.type != AT::ContinueStmt &&
+                        ident.match( ast_tok( TT::Identifier, "continue" ) ) ) {
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::ContinueStmt, *ident.tok, { ident } );
+                return true;
+            }
+            return false;
+        } );
+
+    // Prefix operators
     apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
@@ -243,7 +303,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto op = itr.get();
             auto rhs = itr.skip( 1 ).get_or( ast( AT::None ) );
             if ( !is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "-" ) ) ) {
+                if ( op.match( ast_tok( TT::Operator, "-" ) ) ||
+                     op.match( ast_tok( TT::Operator, "!" ) ) ||
+                     op.match( ast_tok( TT::Operator, "~" ) ) ) {
                     // Remove one consumed element.
                     itr.erase_self();
                     // Replace with merged token
@@ -253,6 +315,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             }
             return false;
         } );
+
+    // TODO Create a generic function for binops
 
     // "*", "/", "%" operators
     apply_pass_recursively_from_left(
@@ -299,6 +363,205 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
+    // "<<", ">>" operators
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "<<" ) ) ||
+                     op.match( ast_tok( TT::Operator, ">>" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "<", ">", "<=", ">=" operators
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "<" ) ) ||
+                     op.match( ast_tok( TT::Operator, ">" ) ) ||
+                     op.match( ast_tok( TT::Operator, "<=" ) ) ||
+                     op.match( ast_tok( TT::Operator, ">=" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "==", "!=" operators
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "==" ) ) ||
+                     op.match( ast_tok( TT::Operator, "!=" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "&" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "&" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "^" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "^" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "|" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "|" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "&&" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "&&" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "||" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                if ( op.match( ast_tok( TT::Operator, "||" ) ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
+    // "? :" operator
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto op0 = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto mid = itr.skip( 2 ).get_or( ast( AT::None ) );
+            auto op1 = itr.skip( 3 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 4 ).get_or( ast( AT::None ) );
+            if ( is_expr( lhs ) && is_expr( mid ) && is_expr( rhs ) ) {
+                if ( op0.match( ast_tok( TT::Operator, "?" ) ) &&
+                     op0.match( ast_tok( TT::Operator, ":" ) ) ) {
+                    // Remove four consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::TernOp, *op0.tok, { lhs, rhs } );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
     // Assignment operators
     apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
@@ -312,7 +575,12 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                      op.match( ast_tok( TT::Operator, "-=" ) ) ||
                      op.match( ast_tok( TT::Operator, "*=" ) ) ||
                      op.match( ast_tok( TT::Operator, "/=" ) ) ||
-                     op.match( ast_tok( TT::Operator, "%=" ) ) ) {
+                     op.match( ast_tok( TT::Operator, "%=" ) ) ||
+                     op.match( ast_tok( TT::Operator, "&=" ) ) ||
+                     op.match( ast_tok( TT::Operator, "^=" ) ) ||
+                     op.match( ast_tok( TT::Operator, "|=" ) ) ||
+                     op.match( ast_tok( TT::Operator, "<<=" ) ) ||
+                     op.match( ast_tok( TT::Operator, ">>=" ) ) ) {
                     // Remove two consumed elements.
                     itr.erase_self();
                     itr.erase_self();
@@ -333,7 +601,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto lhs = itr.get();
             auto opr = itr.skip( 1 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "int" ),
+            if ( itr.match( ast( AT::Type ),
                             ast_with_tok( AT::AsnOp, TT::Operator, "=",
                                           ast( AT::Ident ) ) ) ) {
                 // Is "int <ident> = <expr>"
@@ -342,9 +610,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 // Replace with merged token
                 itr.get() = make_merged_node( AT::Decl, *lhs.tok, { opr } );
                 return true;
-            } else if ( itr.match( ast_tok( TT::Keyword, "int" ),
-                                   ast( AT::Ident ) ) ) {
-                // Is "int <ident>"
+            } else if ( itr.match( ast( AT::Type ), ast( AT::Ident ) ) ) {
+                // Is "<type> <ident>"
                 // Remove one consumed element.
                 itr.erase_self();
                 // Replace with merged token
@@ -386,6 +653,139 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     // print_ast( root_node, "=After semicolons"  ); // DEBUG
 
+    // If statements
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto if_kw = itr.get();
+            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto true_block = itr.skip( 2 ).get_or( ast( AT::None ) );
+            auto else_kw = itr.skip( 3 ).get_or( ast( AT::None ) );
+            auto false_block = itr.skip( 4 ).get_or( ast( AT::None ) );
+            if ( itr.match( ast_tok( TT::Keyword, "if" ), ast( AT::Paren ),
+                            ast( AT::Block ) ) &&
+                 !paren.nodes->empty() ) {
+                if ( itr.skip( 3 ).match( ast_tok( TT::Keyword, "else" ),
+                                          ast( AT::Block ) ) ) {
+                    // Is "if (...) { ... } else { ... }"
+                    // if-else
+                    // Remove four consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::IfElseStmt, *if_kw.tok,
+                                          { paren, true_block, false_block } );
+                } else {
+                    // Is "if (...) { ... }" without else
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() = make_merged_node( AT::IfStmt, *if_kw.tok,
+                                                  { paren, true_block } );
+                }
+                return true;
+            }
+            return false;
+        } );
+
+    // While loop
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto if_kw = itr.get();
+            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( itr.match( ast_tok( TT::Keyword, "while" ), ast( AT::Paren ),
+                            ast( AT::Block ) ) ) {
+                // Is "while (...) { ... }"
+                // Remove two consumed elements.
+                itr.erase_self();
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::WhileLoop, *if_kw.tok,
+                                              { paren, block } );
+                return true;
+            }
+            return false;
+        } );
+
+    // For loop
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto for_kw = itr.get();
+            auto none = ast( AT::None );
+            auto paren = itr.skip( 1 ).get_or( none );
+            auto block = itr.skip( 2 ).get_or( none );
+            // For loops have kind of a messy syntax...
+            if ( itr.match( ast_tok( TT::Keyword, "for" ), ast( AT::Paren ),
+                            ast( AT::Block ) ) &&
+                 paren.nodes->length() <= 3 ) {
+                auto pb = paren.nodes->itr(); // paren body
+                auto &pb0 = pb.get();
+                auto &pb1 =
+                    pb.skip( 1 ).get_or( none ); // Always the inner expr
+                auto &pb2 = pb.skip( 2 ).get_or( none );
+                bool valid = false;
+                if ( pb1.type == AT::Stmt &&
+                     is_expr( pb1.nodes->first()->get() ) ) {
+                    pb1 = pb1.nodes->first()->get(); // remove semicolon
+                    if ( pb.match( ast( AT::Stmt ), ast( AT::Stmt ) ) &&
+                         is_stmt_body( pb2 ) ) {
+                        // Is "for (<stmt>; <expr>; <stmt>) { ... }"
+                        pb0 = pb0.nodes->first()->get(); // remove semicolon
+                        valid = true;
+                    } else if ( pb.match( ast_tok( TT::Operator, ";" ),
+                                          ast( AT::Stmt ) ) &&
+                                is_stmt_body( pb2 ) ) {
+                        // Is "for (; <expr>; <stmt>) { ... }"
+                        // First argument is equivalent to an empty block
+                        pb0 = ast( AT::Block );
+                        // Dummy container is needed here
+                        pb0.nodes = std::make_shared<AstCont>();
+                        valid = true;
+                    } else if ( pb.match( ast( AT::Stmt ), ast( AT::Stmt ) ) ) {
+                        // Is "for (<stmt>; <expr>;) { ... }"
+                        pb0 = pb0.nodes->first()->get(); // remove semicolon
+                        // Add a third parameter as empty block
+                        auto third_param = ast( AT::Block );
+                        // Dummy container is needed here
+                        pb0.nodes = std::make_shared<AstCont>();
+                        paren.nodes->put( third_param );
+                        valid = true;
+                    } else if ( pb.match( ast_tok( TT::Operator, ";" ),
+                                          ast( AT::Stmt ) ) ) {
+                        // Is "for (; <expr>;) { ... }"
+                        // First argument is equivalent to an empty block
+                        pb0 = ast( AT::Block );
+                        // Dummy container is needed here
+                        pb0.nodes = std::make_shared<AstCont>();
+                        // Add a third parameter as empty block
+                        auto third_param = ast( AT::Block );
+                        // Dummy container is needed here
+                        pb0.nodes = std::make_shared<AstCont>();
+                        paren.nodes->put( third_param );
+                        valid = true;
+                    }
+                }
+                if ( valid ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                }
+
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
+                                              { paren, block } );
+                return true;
+            }
+            return false;
+        } );
+
     // Function definitions
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
@@ -410,6 +810,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             }
             return false;
         } );
+
+    print_ast( root_node, "=After parsing" ); // DEBUG
 
     // Check for AT::Stmt in blocks
     apply_pass_recursively_from_left(

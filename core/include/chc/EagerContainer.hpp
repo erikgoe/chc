@@ -55,6 +55,17 @@ public:
             }
         }
 
+        /// Safe version of get() which returns an alternative, if the element
+        /// would be None.
+        T &get_or( T &alternative ) {
+            auto ret = curr();
+            if ( ret.has_value() ) {
+                return *ret;
+            } else {
+                return alternative;
+            }
+        }
+
         /// Does both get the value and increment the iterator.
         const T &consume() {
             assert( curr_valid() );
