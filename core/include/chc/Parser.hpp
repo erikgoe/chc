@@ -66,6 +66,39 @@ struct AstNode {
     operator bool() const { return matching_valid; }
 };
 
+enum class ArithType {
+    None,
+
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+
+    BInv,
+    BAnd,
+    BOr,
+    BXor,
+
+    Shl,
+    Shr,
+
+    Eq,
+    UnEq,
+    Less,
+    Greater,
+    LessEq,
+    GreaterEq,
+
+    LNot,
+    LAnd,
+    LOr,
+
+    Unknown,
+
+    count
+};
 
 AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens );
 

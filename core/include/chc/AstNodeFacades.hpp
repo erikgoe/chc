@@ -4,46 +4,11 @@
 
 namespace chc {
 
-
 namespace AstNodeFacades {
 
 using AstCont = EagerContainer<AstNode>;
 
-enum class ArithType {
-    None,
-
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Neg,
-
-    BInv,
-    BAnd,
-    BOr,
-    BXor,
-
-    Shl,
-    Shr,
-
-    Eq,
-    UnEq,
-    Less,
-    Greater,
-    LessEq,
-    GreaterEq,
-
-    LNot,
-    LAnd,
-    LOr,
-
-    Unknown,
-
-    count
-};
-
-ArithType map_bin_arith( const String &str ) {
+inline ArithType map_bin_arith( const String &str ) {
     if ( str == "" ) {
         return ArithType::None;
     } else if ( str == "+" ) {
@@ -87,7 +52,7 @@ ArithType map_bin_arith( const String &str ) {
     }
 }
 
-String map_bin_arith( ArithType type ) {
+inline String map_bin_arith( ArithType type ) {
     if ( type == ArithType::Add ) {
         return "+";
     } else if ( type == ArithType::Sub ) {
@@ -414,7 +379,7 @@ public:
             auto itr = to_wrap.nodes->itr();
             cond = itr.get().nodes->first()->get();
             true_stmt = itr.skip( 1 ).get();
-            false_stmt = AstNode{ AT::None };
+            false_stmt = AstNode{ AstNode::Type::None };
         } else if ( to_wrap.type == AstNode::Type::IfElseStmt ) {
             matches = true;
             auto itr = to_wrap.nodes->itr();

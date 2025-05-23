@@ -279,21 +279,27 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     itr.get().nodes->itr().get() = outer_node;
                     return true;
                 }
-            } else if ( auto binop = BinOp( node ) ) {
-                // Translate short-circuit operators to ternary operator.
-                // Bool constant
-                auto const_true =
-                    AstNode{ AT::BoolConst,
-                             {},
-                             Token{ Token::Type::Keyword, "true", node.ifi },
-                             {},
-                             node.ifi };
-                if ( binop.type == ArithType::LAnd ) {
+            } else if ( auto uni_op = UniOp( node ) ) {
+                if ( uni_op.type == ArithType::LNot ) {
+                    // Translate logical not into ternary operator.
+                    auto const_true = AstNode{ AT::BoolConst,
+                                               {},
+                                               Token{ Token::Type::Keyword,
+                                                      "true", node.ifi },
+                                               {},
+                                               node.ifi };
+                    auto const_false = AstNode{ AT::BoolConst,
+                                                {},
+                                                Token{ Token::Type::Keyword,
+                                                       "false", node.ifi },
+                                                {},
+                                                node.ifi };
+
                     // Ternary operator
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( binop.lhs );
-                    tern_op.nodes->put( binop.rhs );
+                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.nodes->put( const_false );
                     tern_op.nodes->put( const_true );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "?";
@@ -302,13 +308,79 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Replace
                     itr.get() = tern_op;
                     return true;
-                } else if ( binop.type == ArithType::LOr ) {
+                } else if ( uni_op.type == ArithType::BInv ) {
+                    // Translate bit inversion into Xor with all 1s
+                    auto const_ones =
+                        AstNode{ AT::IntConst,
+                                 {},
+                                 Token{ Token::Type::Keyword, "-1", node.ifi },
+                                 {},
+                                 node.ifi };
+
+                    // Ternary operator
+                    auto tern_op = AstNode{ AT::BinOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.nodes->put( const_ones );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "^";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                    return true;
+                } else if ( uni_op.type == ArithType::Neg ) {
+                    // Translate integer negation into 0-x
+                    auto const_zero =
+                        AstNode{ AT::IntConst,
+                                 {},
+                                 Token{ Token::Type::Keyword, "0", node.ifi },
+                                 {},
+                                 node.ifi };
+
+                    // Ternary operator
+                    auto tern_op = AstNode{ AT::BinOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( const_zero );
+                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "-";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                    return true;
+                }
+            } else if ( auto bin_op = BinOp( node ) ) {
+                // Translate short-circuit operators to ternary operator.
+                // Bool constant
+                auto const_true =
+                    AstNode{ AT::BoolConst,
+                             {},
+                             Token{ Token::Type::Keyword, "true", node.ifi },
+                             {},
+                             node.ifi };
+                if ( bin_op.type == ArithType::LAnd ) {
                     // Ternary operator
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( binop.lhs );
+                    tern_op.nodes->put( bin_op.lhs );
+                    tern_op.nodes->put( bin_op.rhs );
                     tern_op.nodes->put( const_true );
-                    tern_op.nodes->put( binop.rhs );
+                    tern_op.tok = node.tok;
+                    tern_op.tok->content = "?";
+                    tern_op.ifi = tern_op.tok->ifi;
+
+                    // Replace
+                    itr.get() = tern_op;
+                    return true;
+                } else if ( bin_op.type == ArithType::LOr ) {
+                    // Ternary operator
+                    auto tern_op = AstNode{ AT::TernOp };
+                    tern_op.nodes = std::make_shared<AstCont>();
+                    tern_op.nodes->put( bin_op.lhs );
+                    tern_op.nodes->put( const_true );
+                    tern_op.nodes->put( bin_op.rhs );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "?";
                     tern_op.ifi = tern_op.tok->ifi;

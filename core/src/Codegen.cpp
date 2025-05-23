@@ -64,6 +64,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                             const InFileInfo &ifi ) {
         assembly.put( Assembly_x86{ opcode, dest, src, 0, "", ifi } );
     };
+    auto put_reg = [&]( AOC opcode, HwReg dest, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, dest, no_reg, 0, "", ifi } );
+    };
     auto put_reg_imm = [&]( AOC opcode, HwReg dest, i32 imm,
                             const InFileInfo &ifi ) {
         assembly.put( Assembly_x86{ opcode, dest, no_reg, imm, "", ifi } );
@@ -207,43 +210,91 @@ void generate_code_x86( CompilerState &state, const String &original_source,
 #endif
 
         // Actual instructions
-        if ( instr.type == MT::Const ) {
+        if ( instr.type == MT::Label ) {
+            put_label( "l" + to_string( instr.imm ), instr.ifi );
+        } else if ( instr.type == MT::Const ) {
             put_reg_imm( AOC::MovConst, HwReg::eax, instr.imm, instr.ifi );
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Mov ) {
             auto src_reg = make_available( instr.p0, instr.ifi );
             writeback_opt( instr.result, src_reg, instr.ifi );
-        } else if ( instr.type == MT::Add ) {
+        } else if ( instr.type == MT::BinOp ) {
+            AOC aoc;
+            switch ( instr.subtype ) {
+            case ArithType::Add:
+                aoc = AOC::Add;
+                break;
+            case ArithType::Sub:
+                aoc = AOC::Sub;
+                break;
+            case ArithType::Mul:
+                aoc = AOC::IMul;
+                break;
+            case ArithType::Div:
+                aoc = AOC::IDiv;
+                break;
+            case ArithType::Mod:
+                aoc = AOC::IDiv;
+                break;
+            case ArithType::BAnd:
+                aoc = AOC::And;
+                break;
+            case ArithType::BOr:
+                aoc = AOC::Or;
+                break;
+            case ArithType::BXor:
+                aoc = AOC::Xor;
+                break;
+            case ArithType::Shl:
+                aoc = AOC::Shl;
+                break;
+            case ArithType::Shr:
+                aoc = AOC::Shr;
+                break;
+            case ArithType::Eq:
+                aoc = AOC::SetEq;
+                break;
+            case ArithType::Less:
+                aoc = AOC::SetBelow;
+                break;
+            case ArithType::LessEq:
+                aoc = AOC::SetBelowEq;
+                break;
+            default:
+                aoc = AOC::None;
+                break;
+            }
+            // Add the actual instructions
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             auto rhs_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::Add, HwReg::eax, rhs_reg, instr.ifi );
-            writeback_opt( instr.result, HwReg::eax, instr.ifi );
-        } else if ( instr.type == MT::Sub ) {
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            auto rhs_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::Sub, HwReg::eax, rhs_reg, instr.ifi );
-            writeback_opt( instr.result, HwReg::eax, instr.ifi );
-        } else if ( instr.type == MT::Mul ) {
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            auto rhs_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::IMul, HwReg::eax, rhs_reg, instr.ifi );
-            writeback_opt( instr.result, HwReg::eax, instr.ifi );
-        } else if ( instr.type == MT::Div ) {
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            auto rhs_reg = make_available( instr.p1, instr.ifi );
-            put_empty( AOC::Cltd, instr.ifi );
-            put_reg_reg( AOC::IDiv, HwReg::eax, rhs_reg, instr.ifi );
-            writeback_opt( instr.result, HwReg::eax, instr.ifi );
-        } else if ( instr.type == MT::Mod ) {
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            auto rhs_reg = make_available( instr.p1, instr.ifi );
-            put_empty( AOC::Cltd, instr.ifi );
-            put_reg_reg( AOC::IDiv, HwReg::eax, rhs_reg, instr.ifi );
-            writeback_opt( instr.result, HwReg::edx, instr.ifi );
+            if ( instr.subtype == ArithType::Div ||
+                 instr.subtype == ArithType::Mod ) {
+                put_empty( AOC::Cltd, instr.ifi );
+            }
+            if ( instr.subtype == ArithType::Eq ||
+                 instr.subtype == ArithType::Less ||
+                 instr.subtype == ArithType::LessEq ) {
+                put_reg_reg( AOC::Cmp, HwReg::eax, rhs_reg, instr.ifi );
+                put_reg( aoc, HwReg::eax, instr.ifi );
+            } else {
+                put_reg_reg( aoc, HwReg::eax, rhs_reg, instr.ifi );
+            }
+            if ( instr.subtype == ArithType::Mod ) {
+                writeback_opt( instr.result, HwReg::edx, instr.ifi );
+            } else {
+                writeback_opt( instr.result, HwReg::eax, instr.ifi );
+            }
         } else if ( instr.type == MT::Ret ) {
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             put_empty( AOC::Leave, instr.ifi );
             put_empty( AOC::Ret, instr.ifi );
+        } else if ( instr.type == MT::Jmp ) {
+            put_str( AOC::Jmp, "l" + to_string( instr.imm ), instr.ifi );
+        } else if ( instr.type == MT::JZero ) {
+            auto val = make_available( instr.p0, instr.ifi );
+            put_reg_imm( AOC::MovConst, HwReg::eax, 0, instr.ifi );
+            put_reg_reg( AOC::Cmp, HwReg::eax, val, instr.ifi );
+            put_str( AOC::Jz, "l" + to_string( instr.imm ), instr.ifi );
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(
@@ -340,6 +391,28 @@ void generate_asm_text_x86( CompilerState &state,
             make_reg_reg_op( "idivl", op );
         } else if ( op.opcode == AOC::Cltd ) {
             put_asm( "cltd" );
+        } else if ( op.opcode == AOC::And ) {
+            put_asm( "and" );
+        } else if ( op.opcode == AOC::Or ) {
+            put_asm( "or" );
+        } else if ( op.opcode == AOC::Xor ) {
+            put_asm( "xor" );
+        } else if ( op.opcode == AOC::Shl ) {
+            put_asm( "sal" );
+        } else if ( op.opcode == AOC::Shr ) {
+            put_asm( "sar" );
+        } else if ( op.opcode == AOC::SetEq ) {
+            put_asm( "sete" );
+        } else if ( op.opcode == AOC::SetBelow ) {
+            put_asm( "setb" );
+        } else if ( op.opcode == AOC::SetBelowEq ) {
+            put_asm( "setbe" );
+        } else if ( op.opcode == AOC::Jmp ) {
+            put_asm( "jmp" );
+        } else if ( op.opcode == AOC::Jz ) {
+            put_asm( "jz" );
+        } else if ( op.opcode == AOC::Cmp ) {
+            put_asm( "cmp" );
         } else if ( op.opcode == AOC::Ret ) {
             put_asm( "ret" );
         } else if ( op.opcode == AOC::Enter ) {

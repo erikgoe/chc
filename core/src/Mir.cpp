@@ -1,6 +1,5 @@
 #include "../include/chc/Mir.hpp"
 #include "../include/chc/Message.hpp"
-#include "../include/chc/AstNodeFacades.hpp"
 
 namespace chc {
 
@@ -51,22 +50,20 @@ String Mir::MirInstr::type_name() const {
         return "None";
     case Mir::MirInstr::Type::Nop:
         return "Nop";
+    case Mir::MirInstr::Type::Label:
+        return "Label";
     case Mir::MirInstr::Type::Const:
         return "Const";
     case Mir::MirInstr::Type::Mov:
         return "Mov";
-    case Mir::MirInstr::Type::Add:
-        return "Add";
-    case Mir::MirInstr::Type::Sub:
-        return "Sub";
-    case Mir::MirInstr::Type::Mul:
-        return "Mul";
-    case Mir::MirInstr::Type::Div:
-        return "Div";
-    case Mir::MirInstr::Type::Mod:
-        return "Mod";
+    case Mir::MirInstr::Type::BinOp:
+        return "BinOp (" + map_bin_arith( subtype ) + ")";
     case Mir::MirInstr::Type::Ret:
         return "Ret";
+    case Mir::MirInstr::Type::Jmp:
+        return "Jmp";
+    case Mir::MirInstr::Type::JZero:
+        return "JZero";
     default:
         return "Unknown";
     }
@@ -99,6 +96,22 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId tmp = mir.next_var++;
         write_mir_instr( state, mir, ret.value, tmp );
         mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
+    } else if ( node.type == AT::ContinueStmt ) {
+        if ( mir.continue_stack.empty() ) {
+            make_error_msg( state, "Continue statement must be inside a loop.",
+                            node.ifi, RetCode::SemanticError );
+            return;
+        }
+        mir.instrs.put(
+            MI{ MT::Jmp, 0, 0, 0, mir.continue_stack.back(), node.ifi } );
+    } else if ( node.type == AT::BreakStmt ) {
+        if ( mir.break_stack.empty() ) {
+            make_error_msg( state, "Break statement must be inside a loop.",
+                            node.ifi, RetCode::SemanticError );
+            return;
+        }
+        mir.instrs.put(
+            MI{ MT::Jmp, 0, 0, 0, mir.break_stack.back(), node.ifi } );
     } else if ( auto decl = DeclStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id.value()] = variable;
@@ -106,11 +119,6 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto decl = DeclUninitStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id.value()] = variable;
-    } else if ( auto stmt = AsnOpStmt( node ) ) {
-        assert( stmt.type == ArithType::None ); // Should already be handled in
-                                                // operator_transformation()
-        VarId variable = mir.var_map[symbol_id_of_lvalue( state, stmt.lvalue )];
-        write_mir_instr( state, mir, stmt.value, variable );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id.value()];
         mir.instrs.put( MI{ MT::Mov, into_var, variable, 0, 0, node.ifi } );
@@ -131,36 +139,84 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto int_const = IntConst( node ) ) {
         mir.instrs.put(
             MI{ MT::Const, into_var, 0, 0, int_const.value, node.ifi } );
+    } else if ( auto bool_const = BoolConst( node ) ) {
+        mir.instrs.put( MI{ MT::Const, into_var, 0, 0, bool_const.value ? -1 : 0,
+                            node.ifi } );
+    } else if ( auto stmt = AsnOpStmt( node ) ) {
+        assert( stmt.type == ArithType::None ); // Should already be handled in
+                                                // operator_transformation()
+        VarId variable = mir.var_map[symbol_id_of_lvalue( state, stmt.lvalue )];
+        write_mir_instr( state, mir, stmt.value, variable );
     } else if ( auto bin_op = BinOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
         VarId tmp_rhs = mir.next_var++;
         write_mir_instr( state, mir, bin_op.lhs, tmp_lhs );
         write_mir_instr( state, mir, bin_op.rhs, tmp_rhs );
-        MT op = MT::None;
-        if ( bin_op.type == ArithType::Add ) {
-            op = MT::Add;
-        } else if ( bin_op.type == ArithType::Sub ) {
-            op = MT::Sub;
-        } else if ( bin_op.type == ArithType::Mul ) {
-            op = MT::Mul;
-        } else if ( bin_op.type == ArithType::Div ) {
-            op = MT::Div;
-        } else if ( bin_op.type == ArithType::Mod ) {
-            op = MT::Mod;
+        mir.instrs.put( MI{ MT::BinOp, into_var, tmp_lhs, tmp_rhs, 0, node.ifi,
+                            bin_op.type } );
+    } else if ( auto tern_op = TernOp( node ) ) {
+        i32 else_lbl = mir.next_label++;
+        i32 skip_lbl = mir.next_label++;
+        VarId tmp = mir.next_var++;
+        VarId tmp_true = mir.next_var++;
+        VarId tmp_false = mir.next_var++;
+        write_mir_instr( state, mir, tern_op.lhs, tmp );
+        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
+        write_mir_instr( state, mir, tern_op.mid, tmp_true );
+        mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
+        write_mir_instr( state, mir, tern_op.rhs, tmp_false );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
+    } else if ( auto if_stmt = IfStmt( node ) ) {
+        bool has_else = if_stmt.false_stmt.type != AT::None;
+        i32 else_lbl = mir.next_label++;
+        i32 skip_lbl = mir.next_label++;
+        VarId tmp = mir.next_var++;
+        VarId tmp_true = mir.next_var++;
+        VarId tmp_false = mir.next_var++;
+        write_mir_instr( state, mir, if_stmt.cond, tmp );
+        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
+        write_mir_instr( state, mir, if_stmt.true_stmt, tmp_true );
+        if ( has_else ) {
+            mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
         }
-        mir.instrs.put( MI{ op, into_var, tmp_lhs, tmp_rhs, 0, node.ifi } );
-    } else if ( auto uni_op = UniOp( node ) ) {
-        VarId tmp_lhs = mir.next_var++;
-        VarId tmp_rhs = mir.next_var++;
-        write_mir_instr( state, mir, uni_op.rhs, tmp_rhs );
-        if ( uni_op.type == ArithType::Neg ) {
-            mir.instrs.put( MI{ MT::Const, tmp_lhs, 0, 0, 0, node.ifi } );
-            mir.instrs.put(
-                MI{ MT::Sub, into_var, tmp_lhs, tmp_rhs, 0, node.ifi } );
-        } else {
-            mir.instrs.put(
-                MI{ MT::None, into_var, tmp_lhs, tmp_rhs, 0, node.ifi } );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
+        if ( has_else ) {
+            write_mir_instr( state, mir, if_stmt.false_stmt, tmp_false );
+            mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
         }
+    } else if ( auto while_loop = WhileLoop( node ) ) {
+        i32 loop_lbl = mir.next_label++;
+        i32 skip_lbl = mir.next_label++;
+        VarId tmp = mir.next_var++;
+        VarId tmp_body = mir.next_var++;
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
+        write_mir_instr( state, mir, while_loop.cond, tmp );
+        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
+        mir.continue_stack.push_back( loop_lbl );
+        mir.break_stack.push_back( skip_lbl );
+        write_mir_instr( state, mir, while_loop.body, tmp );
+        mir.break_stack.pop_back();
+        mir.continue_stack.pop_back();
+        mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
+    } else if ( auto for_loop = ForLoop( node ) ) {
+        i32 loop_lbl = mir.next_label++;
+        i32 skip_lbl = mir.next_label++;
+        VarId tmp = mir.next_var++;
+        VarId tmp_body = mir.next_var++;
+        write_mir_instr( state, mir, for_loop.init, tmp );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
+        write_mir_instr( state, mir, for_loop.cond, tmp );
+        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
+        mir.continue_stack.push_back( loop_lbl );
+        mir.break_stack.push_back( skip_lbl );
+        write_mir_instr( state, mir, for_loop.body, tmp );
+        mir.break_stack.pop_back();
+        mir.continue_stack.pop_back();
+        write_mir_instr( state, mir, for_loop.step, tmp );
+        mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
         while ( itr ) {
@@ -195,8 +251,9 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
 }
 
 bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
-    return instr.type == MT::Ret || instr.type == MT::Div ||
-           instr.type == MT::Mod;
+    return instr.type == MT::Ret ||
+           ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
+                                          instr.subtype == ArithType::Mod ) );
 }
 
 void analyze_neededness( CompilerState &state, Mir &mir ) {
@@ -355,10 +412,9 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     if ( true ) {
         log( "== MIR INSTRS ==" );
         mir.instrs.for_each( []( const Mir::MirInstr &instr ) {
-            String str = instr.type_name() + " " +
-                         to_string( instr.result ) + " " +
-                         to_string( instr.p0 ) + " " + to_string( instr.p1 ) +
-                         " c" + to_string( instr.imm );
+            String str = instr.type_name() + " " + to_string( instr.result ) +
+                         " " + to_string( instr.p0 ) + " " +
+                         to_string( instr.p1 ) + " c" + to_string( instr.imm );
             olog( str );
         } );
     }

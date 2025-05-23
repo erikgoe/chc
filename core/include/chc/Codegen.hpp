@@ -49,6 +49,17 @@ struct Assembly_x86 {
         IMul,
         IDiv,
         Cltd,
+        And,
+        Or,
+        Xor,
+        Shl,
+        Shr,
+        SetEq,
+        SetBelow,
+        SetBelowEq,
+        Jmp,
+        Jz,
+        Cmp,
         Ret,
 
         Enter, // "enter $<imm>, $0"
