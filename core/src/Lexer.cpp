@@ -29,10 +29,13 @@ bool is_ident_token( const String &s ) {
 bool is_operator_token( const String &s ) {
     if ( s.size() != 1 )
         return false;
-    return String( "+-*/%=(){};" ).find( s.front() ) != String::npos;
+    return String( "+-*/%=(){};!~&|^<>?:" ).find( s.front() ) != String::npos;
 }
 bool is_merged_operator( const String &s ) {
-    return s == "+=" || s == "-=" || s == "*=" || s == "/=" || s == "%=";
+    return s == "&&" || s == "||" || s == "==" || s == "!=" || s == "<=" ||
+           s == ">=" || s == "<<" || s == ">>" || s == "+=" || s == "-=" ||
+           s == "*=" || s == "/=" || s == "%=" || s == "&=" || s == "|=" ||
+           s == "^=" || s == "<<=" || s == ">>=";
 }
 
 EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
@@ -240,7 +243,16 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
             }
             txt_tokenized.put( tok );
         } else if ( is_operator_token( t0.content ) ) {
-            if ( is_merged_operator( t0.content + t1.content ) ) {
+            auto t2 = tok_itr.skip( 1 ).get_or(
+                Token{ Token::Type::None, "\n", {} } );
+            if ( is_merged_operator( t0.content + t1.content + t2.content ) ) {
+                // Triple-char operators
+                tok_itr.consume(); // second operator
+                tok_itr.consume(); // third operator
+                txt_tokenized.put( Token{ Token::Type::Operator,
+                                          t0.content + t1.content + t2.content,
+                                          t0.ifi.merge( t2.ifi ) } );
+            } else if ( is_merged_operator( t0.content + t1.content ) ) {
                 // Double-char operator
                 tok_itr.consume(); // second operator
                 txt_tokenized.put( Token{ Token::Type::Operator,
