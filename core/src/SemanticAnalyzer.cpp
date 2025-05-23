@@ -66,7 +66,7 @@ Opt<String> find_similar_symbol(
 }
 
 
-void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
+void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
     std::unordered_map<String, SymbolDecl> symbol_map;
     SymbolId next_symbol = 1;
     std::deque<SymbolStackEntry> prev_stack;
@@ -197,6 +197,42 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
         }
     }
 }
+
+void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
+    // First analyze symbols
+    analyze_symbol_definitions( state, root_node );
+
+    // Check if all symbols were matched
+    if ( state.success ) {
+        apply_pass_recursively_from_left(
+            state, *root_node.nodes, root_node,
+            []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+                auto node = itr.get();
+                if ( node.type == AT::Ident && !node.symbol_id.has_value() )
+                    make_error_msg( state, "Could not calculate id for symbol.",
+                                    node.ifi, RetCode::SemanticError );
+                return false;
+            } );
+    }
+
+    // Check if return statement exists
+    if ( state.success ) {
+        bool found_return = false;
+        apply_pass_recursively_from_left(
+            state, *root_node.nodes, root_node,
+            [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+                auto node = itr.get();
+                if ( node.type == AT::Ret )
+                    found_return = true;
+                return false;
+            } );
+        if ( !found_return ) {
+            make_error_msg( state, "No return statement found.", InFileInfo{},
+                            RetCode::SemanticError );
+        }
+    }
+}
+
 void print_ast( const AstNode &root, const String &title );
 
 void operator_transformation( CompilerState &state, AstNode &root_node ) {
