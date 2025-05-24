@@ -69,6 +69,14 @@ String Mir::MirInstr::type_name() const {
     }
 }
 
+void add_jump_label_target(
+    Mir &mir, i32 label_id,
+    EagerContainer<Mir::MirInstr>::Iterator instr_itr ) {
+    if ( mir.jump_table.size() <= label_id )
+        mir.jump_table.resize( label_id );
+    mir.jump_table[label_id] = instr_itr;
+}
+
 SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
     if ( n.type == AT::Ident ) {
         return n.symbol_id.value();
@@ -140,8 +148,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put(
             MI{ MT::Const, into_var, 0, 0, int_const.value, node.ifi } );
     } else if ( auto bool_const = BoolConst( node ) ) {
-        mir.instrs.put( MI{ MT::Const, into_var, 0, 0, bool_const.value ? -1 : 0,
-                            node.ifi } );
+        mir.instrs.put( MI{ MT::Const, into_var, 0, 0,
+                            bool_const.value ? -1 : 0, node.ifi } );
     } else if ( auto stmt = AsnOpStmt( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
@@ -164,8 +172,10 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
         write_mir_instr( state, mir, tern_op.mid, tmp_true );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
+        add_jump_label_target( mir, else_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
         write_mir_instr( state, mir, tern_op.rhs, tmp_false );
+        add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( auto if_stmt = IfStmt( node ) ) {
         bool has_else = if_stmt.false_stmt.type != AT::None;
@@ -180,9 +190,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         if ( has_else ) {
             mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
         }
+        add_jump_label_target( mir, else_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
         if ( has_else ) {
             write_mir_instr( state, mir, if_stmt.false_stmt, tmp_false );
+            add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
             mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
         }
     } else if ( auto while_loop = WhileLoop( node ) ) {
@@ -190,6 +202,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
         VarId tmp_body = mir.next_var++;
+        add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
         write_mir_instr( state, mir, while_loop.cond, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
@@ -199,6 +212,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
+        add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( auto for_loop = ForLoop( node ) ) {
         i32 loop_lbl = mir.next_label++;
@@ -206,6 +220,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId tmp = mir.next_var++;
         VarId tmp_body = mir.next_var++;
         write_mir_instr( state, mir, for_loop.init, tmp );
+        add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
         write_mir_instr( state, mir, for_loop.cond, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
@@ -216,6 +231,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.continue_stack.pop_back();
         write_mir_instr( state, mir, for_loop.step, tmp );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
+        add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
@@ -226,27 +242,55 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     }
 }
 
+std::pair<MI *, MI *> get_successors(
+    Mir &mir, EagerContainer<Mir::MirInstr>::Iterator instr_itr, MI &none ) {
+    std::pair<MI *, MI *> ret;
+    auto &instr = instr_itr.get();
+    ret.first = &instr_itr.skip( 1 ).get_or( none );
+    ret.second = &none;
+    if ( instr.type == MT::Jmp )
+        ret.first = &mir.jump_table[instr.imm]->get();
+    if ( instr.type == MT::JZero )
+        ret.second = &mir.jump_table[instr.imm]->get();
+    return ret;
+}
+
 void analyze_liveness( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
     auto none = MI{};
-    while ( itr != mir.instrs.begin() ) {
-        itr.skip_self( -1 );
-        auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( none );
+    bool saturated = false;
+    // TODO Maybe find a better way instead of dump repetition. Also for
+    // analyze_neededness() and trim_dead_code().
+    while ( !saturated ) {
+        saturated = true;
+        while ( itr != mir.instrs.begin() ) {
+            itr.skip_self( -1 );
+            auto &instr = itr.get();
+            auto succ = get_successors( mir, itr, none );
 
-        if ( instr.p0 != 0 ) {
-            instr.life.insert( instr.p0 );
-        }
-        if ( instr.p1 != 0 ) {
-            instr.life.insert( instr.p1 );
-        }
-        for ( auto &v : next.life ) {
-            if ( v != instr.result ) {
-                instr.life.insert( v );
+            // Helper
+            auto set_live = [&]( VarId v ) {
+                if ( v != 0 && instr.live.find( v ) == instr.live.end() ) {
+                    instr.live.insert( v );
+                    saturated = false;
+                }
+            };
+
+            // Parameters need to live
+            set_live( instr.p0 );
+            set_live( instr.p1 );
+
+            // Live in successors is transitive, except if its this
+            // instruction's result value.
+            for ( auto &v : succ.first->live ) {
+                if ( v != instr.result )
+                    set_live( v );
+            }
+            for ( auto &v : succ.second->live ) {
+                if ( v != instr.result )
+                    set_live( v );
             }
         }
-        // TODO does not account for jumps yet! Needs another "successor"
-        // detection pass. Then this can instead be implemented as forward pass.
     }
 }
 
@@ -259,60 +303,81 @@ bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
 void analyze_neededness( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
     auto none = MI{};
-    while ( itr != mir.instrs.begin() ) {
-        itr.skip_self( -1 );
-        auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( none );
+    bool saturated = false;
+    while ( !saturated ) {
+        saturated = true;
+        while ( itr != mir.instrs.begin() ) {
+            itr.skip_self( -1 );
+            auto &instr = itr.get();
+            auto succ = get_successors( mir, itr, none );
 
-        if ( has_effect( mir, instr ) ) {
-            // Operations with some effect make their parameters needed.
-            if ( instr.p0 != 0 ) {
-                instr.needed.insert( instr.p0 );
+            // Helper
+            auto set_need = [&]( VarId v ) {
+                if ( v != 0 && instr.needed.find( v ) == instr.needed.end() ) {
+                    instr.needed.insert( v );
+                    saturated = false;
+                }
+            };
+
+            if ( has_effect( mir, instr ) ) {
+                // Operations with some effect make their parameters needed.
+                set_need( instr.p0 );
+                set_need( instr.p1 );
             }
-            if ( instr.p1 != 0 ) {
-                instr.needed.insert( instr.p1 );
-            }
-        }
-        for ( auto &v : next.needed ) {
             // Transitivity of neededness from successors.
-            if ( v != instr.result ) {
-                instr.needed.insert( v );
-            }
-            if ( instr.result != 0 && v == instr.result ) {
-                if ( instr.p0 != 0 ) {
-                    instr.needed.insert( instr.p0 );
+            for ( auto &v : succ.first->needed ) {
+                if ( v != instr.result )
+                    set_need( v );
+                if ( instr.result != 0 && v == instr.result ) {
+                    set_need( instr.p0 );
+                    set_need( instr.p1 );
                 }
-                if ( instr.p1 != 0 ) {
-                    instr.needed.insert( instr.p1 );
+            }
+            for ( auto &v : succ.second->needed ) {
+                if ( v != instr.result )
+                    set_need( v );
+                if ( instr.result != 0 && v == instr.result ) {
+                    set_need( instr.p0 );
+                    set_need( instr.p1 );
                 }
             }
         }
-        // TODO same as analyze_liveness() does not account for jumps yet!
     }
 }
 
 void trim_dead_code( CompilerState &state, Mir &mir ) {
     auto itr = mir.instrs.end();
     auto none = MI{};
+    std::vector<EagerContainer<Mir::MirInstr>::Iterator> to_erase;
     while ( itr != mir.instrs.begin() ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
-        auto &next = itr.skip( 1 ).get_or( none );
+        auto succ = get_successors( mir, itr, none );
         if ( !has_effect( mir, instr ) &&
-             next.needed.find( instr.result ) == next.needed.end() ) {
+             succ.first->needed.find( instr.result ) ==
+                 succ.first->needed.end() &&
+             succ.second->needed.find( instr.result ) ==
+                 succ.second->needed.end() ) {
             // Result is not needed and therefore this line is dead code.
-            itr.erase_self();
+            to_erase.push_back( itr );
         }
     }
-    // TODO same as analyze_liveness() does not account for jumps yet!
+
+    // Now delete dead code
+    for ( auto itr : to_erase ) {
+        itr.erase_self();
+    }
+    mir.jump_table.clear(); // All iterators invalidated
+    // TODO maybe find a better way, as soon as EagerContainer allows for safe
+    // erasure.
 }
 
 void create_inference_graph( CompilerState &state, Mir &mir,
                              InferenceGraph &inference_graph ) {
     // Every pair is included twice, because it is an undirected graph.
     mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
-        for ( auto v0 : instr.life ) {
-            for ( auto v1 : instr.life ) {
+        for ( auto v0 : instr.live ) {
+            for ( auto v1 : instr.live ) {
                 if ( v0 != v1 )
                     inference_graph.set_inference( v0, v1 );
             }

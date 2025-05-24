@@ -38,7 +38,7 @@ struct Mir {
         ArithType subtype = ArithType::None;
         TypeId result_type = 0; // TODO
 
-        std::set<VarId> life;
+        std::set<VarId> live;
         std::set<VarId> needed; // Needed variables
 
         String type_name() const;
@@ -52,6 +52,8 @@ struct Mir {
     i32 next_label = 1;
     std::deque<i32> continue_stack;
     std::deque<i32> break_stack;
+    std::vector<Opt<decltype( instrs )::Iterator>>
+        jump_table; // Maps label ids to instr indices.
 
     std::vector<RegId> reg_mapping;
     RegId reg_count = 0; // Maximum used registers

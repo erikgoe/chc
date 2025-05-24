@@ -86,9 +86,7 @@ public:
         }
 
         /// Increment the iterator.
-        void consume_opt() {
-            skip_self( 1 );
-        }
+        void consume_opt() { skip_self( 1 ); }
 
         /// Returns a new iterator with the specified index applied.
         Iterator skip( ssize_t count = 1 ) const {
