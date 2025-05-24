@@ -144,13 +144,15 @@ bool is_lvalue( const AstNode &node ) {
              is_lvalue( *node.nodes->first() ) );
 }
 
+bool is_stmt( const AstNode &node ) {
+    return node.type == AT::Stmt || node.type == AT::Block ||
+           node.type == AT::IfStmt || node.type == AT::IfElseStmt ||
+           node.type == AT::WhileLoop || node.type == AT::ForLoop;
+}
+
 bool is_function_body( const AstNode &node ) {
     return node.type == AT::Block && node.nodes &&
-           node.nodes->all( []( const AstNode &n ) {
-               return n.type == AT::Stmt || n.type == AT::Block ||
-                      n.type == AT::IfStmt || n.type == AT::WhileLoop ||
-                      n.type == AT::ForLoop;
-           } );
+           node.nodes->all( []( const AstNode &n ) { return is_stmt( n ); } );
 }
 
 AstNode make_merged_node( AT type, Token main_token,
@@ -815,13 +817,13 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     print_ast( root_node, "=After parsing" ); // DEBUG
 
-    // Check for AT::Stmt in blocks
+    // Check for Statements in blocks
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( parent.type == AT::Block ) {
                 auto node = itr.get();
-                if ( node.type != AT::Stmt )
+                if ( !is_stmt( node ) )
                     make_error_msg( state,
                                     "Expected statement in block. Did you "
                                     "forget a semicolon?",

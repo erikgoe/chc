@@ -392,27 +392,27 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::Cltd ) {
             put_asm( "cltd" );
         } else if ( op.opcode == AOC::And ) {
-            put_asm( "and" );
+            make_reg_reg_op( "and", op );
         } else if ( op.opcode == AOC::Or ) {
-            put_asm( "or" );
+            make_reg_reg_op( "or", op );
         } else if ( op.opcode == AOC::Xor ) {
-            put_asm( "xor" );
+            make_reg_reg_op( "xor", op );
         } else if ( op.opcode == AOC::Shl ) {
-            put_asm( "sal" );
+            make_reg_reg_op( "sal", op );
         } else if ( op.opcode == AOC::Shr ) {
-            put_asm( "sar" );
+            make_reg_reg_op( "sar", op );
         } else if ( op.opcode == AOC::SetEq ) {
-            put_asm( "sete" );
+            put_asm( "sete %al" );
         } else if ( op.opcode == AOC::SetBelow ) {
-            put_asm( "setb" );
+            put_asm( "setb %al" );
         } else if ( op.opcode == AOC::SetBelowEq ) {
-            put_asm( "setbe" );
+            put_asm( "setbe %al" );
         } else if ( op.opcode == AOC::Jmp ) {
-            put_asm( "jmp" );
+            put_asm( "jmp " + op.str );
         } else if ( op.opcode == AOC::Jz ) {
-            put_asm( "jz" );
+            put_asm( "jz " + op.str );
         } else if ( op.opcode == AOC::Cmp ) {
-            put_asm( "cmp" );
+            make_reg_reg_op( "cmp", op );
         } else if ( op.opcode == AOC::Ret ) {
             put_asm( "ret" );
         } else if ( op.opcode == AOC::Enter ) {

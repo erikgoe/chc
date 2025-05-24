@@ -73,7 +73,7 @@ void add_jump_label_target(
     Mir &mir, i32 label_id,
     EagerContainer<Mir::MirInstr>::Iterator instr_itr ) {
     if ( mir.jump_table.size() <= label_id )
-        mir.jump_table.resize( label_id );
+        mir.jump_table.resize( label_id + 1 );
     mir.jump_table[label_id] = instr_itr;
 }
 
@@ -166,15 +166,14 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 else_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
-        VarId tmp_true = mir.next_var++;
-        VarId tmp_false = mir.next_var++;
+        // This is where it stops being real SSA (writing into into_var twice).
         write_mir_instr( state, mir, tern_op.lhs, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
-        write_mir_instr( state, mir, tern_op.mid, tmp_true );
+        write_mir_instr( state, mir, tern_op.mid, into_var );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
         add_jump_label_target( mir, else_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
-        write_mir_instr( state, mir, tern_op.rhs, tmp_false );
+        write_mir_instr( state, mir, tern_op.rhs, into_var );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( auto if_stmt = IfStmt( node ) ) {
@@ -295,7 +294,8 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
 }
 
 bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
-    return instr.type == MT::Ret ||
+    return instr.type == MT::Ret || instr.type == MT::Jmp ||
+           instr.type == MT::JZero || instr.type == MT::Label ||
            ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
                                           instr.subtype == ArithType::Mod ) );
 }
