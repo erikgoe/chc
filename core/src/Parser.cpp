@@ -208,6 +208,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             // TODO strings not yet implemented
             //}else if(t.type == TT::String){
             //    return AstNode{ AT::String, {}, t, {}, t.ifi };
+        } else if ( t.type == TT::Keyword &&
+                    ( t.content == "true" || t.content == "false" ) ) {
+            return AstNode{ AT::BoolConst, {}, t, {}, t.ifi };
         } else if ( t.type == TT::Identifier ) {
             return AstNode{ AT::Ident, {}, t, {}, t.ifi };
         } else {
