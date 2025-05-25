@@ -117,7 +117,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId tmp = mir.next_var++;
         write_mir_instr( state, mir, *ret.value, tmp );
         mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
-    } else if ( node.type == AT::ContinueStmt ) {
+    } else if ( node.type == AT::Stmt &&
+                node.nodes->itr().get().type == AT::ContinueStmt ) {
         if ( mir.continue_stack.empty() ) {
             make_error_msg( state, "Continue statement must be inside a loop.",
                             node.ifi, RetCode::SemanticError );
@@ -125,7 +126,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         }
         mir.instrs.put(
             MI{ MT::Jmp, 0, 0, 0, mir.continue_stack.back(), node.ifi } );
-    } else if ( node.type == AT::BreakStmt ) {
+    } else if ( node.type == AT::Stmt &&
+                node.nodes->itr().get().type == AT::BreakStmt ) {
         if ( mir.break_stack.empty() ) {
             make_error_msg( state, "Break statement must be inside a loop.",
                             node.ifi, RetCode::SemanticError );
