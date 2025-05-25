@@ -401,15 +401,15 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::Cltd ) {
             put_asm( "cltd" );
         } else if ( op.opcode == AOC::And ) {
-            make_reg_reg_op( "and", op );
+            make_reg_reg_op( "andl", op );
         } else if ( op.opcode == AOC::Or ) {
-            make_reg_reg_op( "or", op );
+            make_reg_reg_op( "orl", op );
         } else if ( op.opcode == AOC::Xor ) {
-            make_reg_reg_op( "xor", op );
+            make_reg_reg_op( "xorl", op );
         } else if ( op.opcode == AOC::Shl ) {
-            put_asm( "sal %cl, " + to_reg_str( op.dest ) );
+            put_asm( "sall %cl, " + to_reg_str( op.dest ) );
         } else if ( op.opcode == AOC::Shr ) {
-            put_asm( "sar %cl, " + to_reg_str( op.dest ) );
+            put_asm( "sarl %cl, " + to_reg_str( op.dest ) );
         } else if ( op.opcode == AOC::SetEq ) {
             put_asm( "sete %al" );
         } else if ( op.opcode == AOC::SetBelow ) {
