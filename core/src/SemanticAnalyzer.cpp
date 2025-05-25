@@ -456,9 +456,37 @@ using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 
 void use_before_init_check( CompilerState &state, Mir &mir ) {
+    std::deque<EagerContainer<Mir::MirInstr>::Iterator> to_check;
     std::set<VarId> defs;
+    to_check.push_back( mir.instrs.itr() );
 
-    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+    auto add_next_line = [&]( EagerContainer<Mir::MirInstr>::Iterator itr,
+                              InFileInfo ifi ) {
+        if ( itr.curr_not_valid() ) {
+            make_error_msg( state, "Missing return statement.", ifi,
+                            RetCode::SemanticError );
+            return;
+        }
+        to_check.push_back( itr );
+    };
+
+    // Check only reachable code
+    while ( !to_check.empty() ) {
+        auto instr_itr = to_check.front();
+        to_check.pop_front();
+
+        // Add successors
+        if ( instr_itr.get().type == MT::Jmp ) {
+            to_check.push_back( *mir.jump_table[instr_itr.get().imm] );
+        } else if ( instr_itr.get().type == MT::JZero ) {
+            add_next_line( instr_itr.skip( 1 ), instr_itr.get().ifi );
+            to_check.push_back( *mir.jump_table[instr_itr.get().imm] );
+        } else if ( instr_itr.get().type != MT::Ret ) {
+            add_next_line( instr_itr.skip( 1 ), instr_itr.get().ifi );
+        }
+
+        // Check variable usage
+        auto &instr = instr_itr.get();
         if ( instr.p0 != 0 && defs.find( instr.p0 ) == defs.end() ) {
             // p0 not defined
             make_error_msg( state, "Using undefined variable", instr.ifi,
@@ -472,7 +500,7 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
         if ( instr.result != 0 ) {
             defs.insert( instr.result );
         }
-    } );
+    }
 }
 
 void type_checking( CompilerState &state, Mir &mir ) {
