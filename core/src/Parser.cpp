@@ -656,10 +656,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // print_ast( root_node, "=After semicolons"  ); // DEBUG
+    // print_ast( root_node, "=After semicolons" ); // DEBUG
 
     // If statements
-    apply_pass_recursively_from_left(
+    apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto if_kw = itr.get();
@@ -722,57 +722,77 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto for_kw = itr.get();
             auto none = ast( AT::None );
+            auto for_kw = itr.get();
             auto paren = itr.skip( 1 ).get_or( none );
             auto block = itr.skip( 2 ).get_or( none );
             // For loops have kind of a messy syntax...
             if ( itr.match( ast_tok( TT::Keyword, "for" ), ast( AT::Paren ) ) &&
-                 paren.nodes->length() <= 3 && is_stmt( block ) ) {
+                 paren.nodes->length() <= 4 && is_stmt( block ) ) {
                 auto pb = paren.nodes->itr(); // paren body
                 auto &pb0 = pb.get();
                 auto &pb1 =
                     pb.skip( 1 ).get_or( none ); // Always the inner expr
                 auto &pb2 = pb.skip( 2 ).get_or( none );
                 bool valid = false;
-                if ( pb1.type == AT::Stmt &&
-                     is_expr( pb1.nodes->first()->get() ) ) {
-                    pb1 = pb1.nodes->first()->get(); // remove semicolon
-                    if ( pb.match( ast( AT::Stmt ), ast( AT::Stmt ) ) &&
-                         is_stmt_body( pb2 ) ) {
+                if ( is_expr( pb1 ) && pb2.type == AT::Token &&
+                     pb2.tok->content == ";" ) {
+                    pb.skip( 2 )
+                        .erase_self(); // Erase semicolon, nos pb2 is 3rd param
+                    if ( pb.match( ast( AT::Stmt ) ) && is_stmt_body( pb2 ) ) {
                         // Is "for (<stmt>; <expr>; <stmt>) { ... }"
-                        pb0 = pb0.nodes->first()->get(); // remove semicolon
+
+                        // Wrap third parameter into statement
+                        auto third_param = ast( AT::Stmt );
+                        // Dummy container is needed here
+                        third_param.nodes = std::make_shared<AstCont>();
+                        third_param.nodes->put( pb2 );
+                        paren.nodes->put( third_param );
+                        pb.skip( 2 ).erase_self();
+
                         valid = true;
-                    } else if ( pb.match( ast_tok( TT::Operator, ";" ),
-                                          ast( AT::Stmt ) ) &&
+                    } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) &&
                                 is_stmt_body( pb2 ) ) {
                         // Is "for (; <expr>; <stmt>) { ... }"
+
                         // First argument is equivalent to an empty block
                         pb0 = ast( AT::Block );
                         // Dummy container is needed here
                         pb0.nodes = std::make_shared<AstCont>();
+
+                        // Wrap third parameter into statement
+                        auto third_param = ast( AT::Stmt );
+                        // Dummy container is needed here
+                        third_param.nodes = std::make_shared<AstCont>();
+                        third_param.nodes->put( pb2 );
+                        paren.nodes->put( third_param );
+                        pb.skip( 2 ).erase_self();
+
                         valid = true;
-                    } else if ( pb.match( ast( AT::Stmt ), ast( AT::Stmt ) ) ) {
+                    } else if ( pb.match( ast( AT::Stmt ) ) ) {
                         // Is "for (<stmt>; <expr>;) { ... }"
-                        pb0 = pb0.nodes->first()->get(); // remove semicolon
+
                         // Add a third parameter as empty block
                         auto third_param = ast( AT::Block );
                         // Dummy container is needed here
-                        pb0.nodes = std::make_shared<AstCont>();
+                        third_param.nodes = std::make_shared<AstCont>();
                         paren.nodes->put( third_param );
+
                         valid = true;
-                    } else if ( pb.match( ast_tok( TT::Operator, ";" ),
-                                          ast( AT::Stmt ) ) ) {
+                    } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) ) {
                         // Is "for (; <expr>;) { ... }"
+
                         // First argument is equivalent to an empty block
                         pb0 = ast( AT::Block );
                         // Dummy container is needed here
                         pb0.nodes = std::make_shared<AstCont>();
+
                         // Add a third parameter as empty block
                         auto third_param = ast( AT::Block );
                         // Dummy container is needed here
-                        pb0.nodes = std::make_shared<AstCont>();
+                        third_param.nodes = std::make_shared<AstCont>();
                         paren.nodes->put( third_param );
+
                         valid = true;
                     }
                 }
