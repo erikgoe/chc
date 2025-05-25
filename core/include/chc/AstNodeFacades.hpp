@@ -102,9 +102,9 @@ public:
     operator bool() const { return matches; }
 };
 
-const AstNode &unwrap_paren( const AstNode &node ) {
+AstNode &unwrap_paren( AstNode &node ) {
     if ( node.type == AstNode::Type::Paren ) {
-        return node.nodes->first()->get();
+        return node.nodes->itr().get();
     } else {
         return node;
     }
@@ -119,23 +119,17 @@ public:
             auto decl_itr = itr.get().nodes->itr();
             type = itr.get().tok->content;
             fn_symbol = decl_itr.get().tok->content;
-            fn_symbol_id = decl_itr.get().symbol_id;
-            params = *itr.skip( 1 ).get().nodes;
-            stmts = *itr.skip( 2 ).get().nodes;
+            fn_symbol_id = &decl_itr.get().symbol_id;
+            params = &*itr.skip( 1 ).get().nodes;
+            stmts = &*itr.skip( 2 ).get().nodes;
         }
-    }
-    void update_symbol_id( AstNode &wrapped_node, SymbolId new_id ) {
-        auto itr = wrapped_node.nodes->itr();
-        auto decl_itr = itr.get().nodes->itr();
-        decl_itr.get().symbol_id = new_id;
-        fn_symbol_id = new_id;
     }
 
     String type;
     String fn_symbol;
-    Opt<SymbolId> fn_symbol_id;
-    AstCont params;
-    AstCont stmts;
+    Opt<SymbolId> *fn_symbol_id;
+    AstCont *params;
+    AstCont *stmts;
 };
 
 class RetStmt : public FacadeBase {
@@ -145,11 +139,11 @@ public:
                   to_wrap.nodes->first()->get().type == AstNode::Type::Ret;
         if ( matches ) {
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
-            value = itr.get();
+            value = &itr.get();
         }
     }
 
-    AstNode value;
+    AstNode *value;
 };
 
 class DeclStmt : public FacadeBase {
@@ -162,26 +156,15 @@ public:
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
             auto asnop_itr = itr.get().nodes->itr();
             symbol = asnop_itr.get().tok->content;
-            symbol_id = asnop_itr.get().symbol_id;
-            init = asnop_itr.skip( 1 ).get();
+            symbol_id = &asnop_itr.get().symbol_id;
+            init = &asnop_itr.skip( 1 ).get();
         }
-    }
-    void update_symbol_id( AstNode &wrapped_node, SymbolId new_id ) {
-        auto itr = wrapped_node.nodes->first()->get().nodes->itr();
-        auto asnop_itr = itr.get().nodes->itr();
-        asnop_itr.get().symbol_id = new_id;
-        symbol_id = new_id;
-    }
-    AstNode &ref_init( AstNode &wrapped_node ) {
-        auto itr = wrapped_node.nodes->first()->get().nodes->itr();
-        auto asnop_itr = itr.get().nodes->itr();
-        return asnop_itr.skip( 1 ).get();
     }
 
     String type;
     String symbol;
-    Opt<SymbolId> symbol_id;
-    AstNode init;
+    Opt<SymbolId> *symbol_id;
+    AstNode *init;
 };
 
 class DeclUninitStmt : public FacadeBase {
@@ -194,18 +177,13 @@ public:
             type = to_wrap.nodes->first()->get().tok->content;
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
             symbol = itr.get().tok->content;
-            symbol_id = itr.get().symbol_id;
+            symbol_id = &itr.get().symbol_id;
         }
-    }
-    void update_symbol_id( AstNode &wrapped_node, SymbolId new_id ) {
-        auto itr = wrapped_node.nodes->first()->get().nodes->itr();
-        itr.get().symbol_id = new_id;
-        symbol_id = new_id;
     }
 
     String type;
     String symbol;
-    Opt<SymbolId> symbol_id;
+    Opt<SymbolId> *symbol_id;
 };
 
 class Ident : public FacadeBase {
@@ -214,16 +192,12 @@ public:
         matches = to_wrap.type == AstNode::Type::Ident;
         if ( matches ) {
             symbol = to_wrap.tok->content;
-            id = to_wrap.symbol_id;
+            id = &to_wrap.symbol_id;
         }
-    }
-    void update_symbol_id( AstNode &wrapped_node, SymbolId new_id ) {
-        wrapped_node.symbol_id = new_id;
-        id = new_id;
     }
 
     String symbol;
-    Opt<SymbolId> id;
+    Opt<SymbolId> *id;
 };
 
 class Paren : public FacadeBase {
@@ -232,11 +206,11 @@ public:
         matches = to_wrap.type == AstNode::Type::Paren;
         if ( matches ) {
             if ( to_wrap.nodes )
-                children = *to_wrap.nodes;
+                children = &*to_wrap.nodes;
         }
     }
 
-    AstCont children;
+    AstCont *children;
 };
 
 class Block : public FacadeBase {
@@ -245,11 +219,11 @@ public:
         matches = to_wrap.type == AstNode::Type::Block;
         if ( matches ) {
             if ( to_wrap.nodes )
-                children = *to_wrap.nodes;
+                children = &*to_wrap.nodes;
         }
     }
 
-    AstCont children;
+    AstCont *children;
 };
 
 class Type : public FacadeBase {
@@ -257,11 +231,11 @@ public:
     Type( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::Type;
         if ( matches ) {
-            type_name = to_wrap.tok->content;
+            type_name = &to_wrap.tok->content;
         }
     }
 
-    String type_name;
+    String *type_name;
 };
 
 class IntConst : public FacadeBase {
@@ -296,8 +270,8 @@ public:
         if ( matches ) {
             auto itr = to_wrap.nodes->first()->get().nodes->itr();
             // TODO check that parenthesis has only one subnode
-            lvalue = unwrap_paren( itr.get() );
-            value = itr.skip( 1 ).get();
+            lvalue = &unwrap_paren( itr.get() );
+            value = &itr.skip( 1 ).get();
             auto &type_str = to_wrap.nodes->first()->get().tok->content;
             type = map_bin_arith( type_str.substr( 0, type_str.size() - 1 ) );
         }
@@ -307,8 +281,8 @@ public:
         type_str = map_bin_arith( new_type ) + "=";
     }
 
-    AstNode lvalue;
-    AstNode value;
+    AstNode *lvalue;
+    AstNode *value;
     ArithType type;
 };
 
@@ -318,7 +292,7 @@ public:
         matches = to_wrap.type == AstNode::Type::UniOp;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            rhs = itr.get();
+            rhs = &itr.get();
             auto &type_str = to_wrap.tok->content;
             if ( type_str == "-" ) {
                 type = ArithType::Neg;
@@ -332,7 +306,7 @@ public:
         }
     }
 
-    AstNode rhs;
+    AstNode *rhs;
     ArithType type;
 };
 
@@ -342,8 +316,8 @@ public:
         matches = to_wrap.type == AstNode::Type::BinOp;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            lhs = itr.get();
-            rhs = itr.skip( 1 ).get();
+            lhs = &itr.get();
+            rhs = &itr.skip( 1 ).get();
             auto &type_str = to_wrap.tok->content;
             type = map_bin_arith( type_str );
         }
@@ -353,8 +327,8 @@ public:
         type_str = map_bin_arith( new_type );
     }
 
-    AstNode lhs;
-    AstNode rhs;
+    AstNode *lhs;
+    AstNode *rhs;
     ArithType type;
 };
 
@@ -364,15 +338,15 @@ public:
         matches = to_wrap.type == AstNode::Type::TernOp;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            lhs = itr.get();
-            mid = itr.skip( 1 ).get();
-            rhs = itr.skip( 2 ).get();
+            lhs = &itr.get();
+            mid = &itr.skip( 1 ).get();
+            rhs = &itr.skip( 2 ).get();
         }
     }
 
-    AstNode lhs;
-    AstNode mid;
-    AstNode rhs;
+    AstNode *lhs;
+    AstNode *mid;
+    AstNode *rhs;
 };
 
 class IfStmt : public FacadeBase {
@@ -381,21 +355,29 @@ public:
         if ( to_wrap.type == AstNode::Type::IfStmt ) {
             matches = true;
             auto itr = to_wrap.nodes->itr();
-            cond = itr.get().nodes->first()->get();
+            cond = &itr.get().nodes->itr().get();
             true_stmt = itr.skip( 1 ).get();
             false_stmt = AstNode{ AstNode::Type::None };
         } else if ( to_wrap.type == AstNode::Type::IfElseStmt ) {
             matches = true;
             auto itr = to_wrap.nodes->itr();
-            cond = itr.get().nodes->first()->get();
+            cond = &itr.get().nodes->itr().get();
             true_stmt = itr.skip( 1 ).get();
             false_stmt = itr.skip( 2 ).get();
         } else {
             matches = false;
         }
     }
+    void write_back_true_stmt( AstNode &wrapped_node ) {
+        auto itr = wrapped_node.nodes->itr();
+        itr.skip( 1 ).get() = true_stmt;
+    }
+    void write_back_false_stmt( AstNode &wrapped_node ) {
+        auto itr = wrapped_node.nodes->itr();
+        itr.skip( 2 ).get() = false_stmt;
+    }
 
-    AstNode cond;
+    AstNode *cond;
     AstNode true_stmt;
     AstNode false_stmt;
 };
@@ -406,13 +388,13 @@ public:
         matches = to_wrap.type == AstNode::Type::WhileLoop;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            cond = itr.get().nodes->first()->get();
-            body = itr.skip( 1 ).get();
+            cond = &itr.get().nodes->itr().get();
+            body = &itr.skip( 1 ).get();
         }
     }
 
-    AstNode cond;
-    AstNode body;
+    AstNode *cond;
+    AstNode *body;
 };
 
 class ForLoop : public FacadeBase {
@@ -421,17 +403,17 @@ public:
         matches = to_wrap.type == AstNode::Type::ForLoop;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            init = itr.get().nodes->itr().get();
-            cond = itr.get().nodes->itr().skip( 1 ).get();
-            step = itr.get().nodes->itr().skip( 2 ).get();
-            body = itr.skip( 1 ).get();
+            init = &itr.get().nodes->itr().get();
+            cond = &itr.get().nodes->itr().skip( 1 ).get();
+            step = &itr.get().nodes->itr().skip( 2 ).get();
+            body = &itr.skip( 1 ).get();
         }
     }
 
-    AstNode init;
-    AstNode cond;
-    AstNode step;
-    AstNode body;
+    AstNode *init;
+    AstNode *cond;
+    AstNode *step;
+    AstNode *body;
 };
 
 } // namespace AstNodeFacades

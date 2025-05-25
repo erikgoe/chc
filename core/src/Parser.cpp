@@ -837,7 +837,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    print_ast( root_node, "=After parsing" ); // DEBUG
+    // print_ast( root_node, "=After parsing" ); // DEBUG
 
     // Check for Statements in blocks
     apply_pass_recursively_from_left(

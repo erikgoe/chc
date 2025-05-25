@@ -95,14 +95,14 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
     if ( auto fn_def = FunctionDef( node ) ) {
         // TODO params
-        auto itr = fn_def.stmts.itr();
+        auto itr = fn_def.stmts->itr();
         while ( itr ) {
             write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
         }
     } else if ( auto ret = RetStmt( node ) ) {
         VarId tmp = mir.next_var++;
-        write_mir_instr( state, mir, ret.value, tmp );
+        write_mir_instr( state, mir, *ret.value, tmp );
         mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
     } else if ( node.type == AT::ContinueStmt ) {
         if ( mir.continue_stack.empty() ) {
@@ -122,24 +122,24 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             MI{ MT::Jmp, 0, 0, 0, mir.break_stack.back(), node.ifi } );
     } else if ( auto decl = DeclStmt( node ) ) {
         VarId variable = mir.next_var++;
-        mir.var_map[decl.symbol_id.value()] = variable;
-        write_mir_instr( state, mir, decl.init, variable );
+        mir.var_map[decl.symbol_id->value()] = variable;
+        write_mir_instr( state, mir, *decl.init, variable );
     } else if ( auto decl = DeclUninitStmt( node ) ) {
         VarId variable = mir.next_var++;
-        mir.var_map[decl.symbol_id.value()] = variable;
+        mir.var_map[decl.symbol_id->value()] = variable;
     } else if ( auto ident = Ident( node ) ) {
-        VarId variable = mir.var_map[ident.id.value()];
+        VarId variable = mir.var_map[ident.id->value()];
         mir.instrs.put( MI{ MT::Mov, into_var, variable, 0, 0, node.ifi } );
     } else if ( auto paren = Paren( node ) ) {
-        if ( paren.children.length() != 1 ) {
+        if ( paren.children->length() != 1 ) {
             make_error_msg( state, "Expected only one element in parenthesis.",
                             node.ifi, RetCode::SyntaxError );
             return;
         }
-        auto child = paren.children.first()->get();
+        auto child = paren.children->first()->get();
         write_mir_instr( state, mir, child, into_var );
     } else if ( auto block = Block( node ) ) {
-        auto itr = block.children.itr();
+        auto itr = block.children->itr();
         while ( itr ) {
             write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
@@ -153,13 +153,14 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto stmt = AsnOpStmt( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
-        VarId variable = mir.var_map[symbol_id_of_lvalue( state, stmt.lvalue )];
-        write_mir_instr( state, mir, stmt.value, variable );
+        VarId variable =
+            mir.var_map[symbol_id_of_lvalue( state, *stmt.lvalue )];
+        write_mir_instr( state, mir, *stmt.value, variable );
     } else if ( auto bin_op = BinOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
         VarId tmp_rhs = mir.next_var++;
-        write_mir_instr( state, mir, bin_op.lhs, tmp_lhs );
-        write_mir_instr( state, mir, bin_op.rhs, tmp_rhs );
+        write_mir_instr( state, mir, *bin_op.lhs, tmp_lhs );
+        write_mir_instr( state, mir, *bin_op.rhs, tmp_rhs );
         mir.instrs.put( MI{ MT::BinOp, into_var, tmp_lhs, tmp_rhs, 0, node.ifi,
                             bin_op.type } );
     } else if ( auto tern_op = TernOp( node ) ) {
@@ -167,13 +168,13 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
         // This is where it stops being real SSA (writing into into_var twice).
-        write_mir_instr( state, mir, tern_op.lhs, tmp );
+        write_mir_instr( state, mir, *tern_op.lhs, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
-        write_mir_instr( state, mir, tern_op.mid, into_var );
+        write_mir_instr( state, mir, *tern_op.mid, into_var );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
         add_jump_label_target( mir, else_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, else_lbl, node.ifi } );
-        write_mir_instr( state, mir, tern_op.rhs, into_var );
+        write_mir_instr( state, mir, *tern_op.rhs, into_var );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( auto if_stmt = IfStmt( node ) ) {
@@ -183,7 +184,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId tmp = mir.next_var++;
         VarId tmp_true = mir.next_var++;
         VarId tmp_false = mir.next_var++;
-        write_mir_instr( state, mir, if_stmt.cond, tmp );
+        write_mir_instr( state, mir, *if_stmt.cond, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
         write_mir_instr( state, mir, if_stmt.true_stmt, tmp_true );
         if ( has_else ) {
@@ -202,11 +203,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId tmp = mir.next_var++;
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
-        write_mir_instr( state, mir, while_loop.cond, tmp );
+        write_mir_instr( state, mir, *while_loop.cond, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
         mir.continue_stack.push_back( loop_lbl );
         mir.break_stack.push_back( skip_lbl );
-        write_mir_instr( state, mir, while_loop.body, tmp );
+        write_mir_instr( state, mir, *while_loop.body, tmp );
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
@@ -216,17 +217,17 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
-        write_mir_instr( state, mir, for_loop.init, tmp );
+        write_mir_instr( state, mir, *for_loop.init, tmp );
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
-        write_mir_instr( state, mir, for_loop.cond, tmp );
+        write_mir_instr( state, mir, *for_loop.cond, tmp );
         mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
         mir.continue_stack.push_back( loop_lbl );
         mir.break_stack.push_back( skip_lbl );
-        write_mir_instr( state, mir, for_loop.body, tmp );
+        write_mir_instr( state, mir, *for_loop.body, tmp );
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
-        write_mir_instr( state, mir, for_loop.step, tmp );
+        write_mir_instr( state, mir, *for_loop.step, tmp );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );

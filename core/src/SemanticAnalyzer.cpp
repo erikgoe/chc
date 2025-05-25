@@ -117,17 +117,17 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
         // Check node
         if ( auto decl = DeclStmt( node ) ) {
             // Normal variable declaration
-            analyze_block( decl.ref_init( node ) );
+            analyze_block( *decl.init );
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
-            decl.update_symbol_id( node, new_id );
+            *decl.symbol_id = new_id;
         } else if ( auto decl = DeclUninitStmt( node ) ) {
             // Normal variable declaration
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
-            decl.update_symbol_id( node, new_id );
+            *decl.symbol_id = new_id;
         } else if ( auto ident = Ident( node ) ) {
-            if ( !ident.id ) {
+            if ( !*ident.id ) {
                 if ( symbol_map.find( ident.symbol ) != symbol_map.end() ) {
-                    ident.update_symbol_id( node, symbol_map[ident.symbol].id );
+                    node.symbol_id = symbol_map[ident.symbol].id;
                 } else {
                     // Unknown symbol
                     make_error_msg( state, "Undefined identifier", node.ifi,
@@ -145,7 +145,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             // Blocks create new scopes
             push_var_stack();
 
-            auto itr = block.children.itr();
+            auto itr = block.children->itr();
             while ( itr ) {
                 analyze_block( itr.get() );
                 itr.skip_self( 1 );
@@ -154,37 +154,39 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             pop_var_stack();
         } else if ( auto if_stmt = IfStmt( node ) ) {
             // New scope in true_stmt
-            analyze_block( if_stmt.cond );
+            analyze_block( *if_stmt.cond );
             push_var_stack();
             analyze_block( if_stmt.true_stmt );
+            if_stmt.write_back_true_stmt( node );
             pop_var_stack();
 
             // Optionally the same for the false_statement
             if ( if_stmt.false_stmt.type != AT::None ) {
                 push_var_stack();
                 analyze_block( if_stmt.false_stmt );
+                if_stmt.write_back_false_stmt( node );
                 pop_var_stack();
             }
         } else if ( auto while_loop = WhileLoop( node ) ) {
             // New scope in while body
-            analyze_block( while_loop.cond );
+            analyze_block( *while_loop.cond );
             push_var_stack();
-            analyze_block( while_loop.body );
+            analyze_block( *while_loop.body );
             pop_var_stack();
         } else if ( auto for_loop = ForLoop( node ) ) {
             // For loops actually have two scopes
             push_var_stack();
-            analyze_block( for_loop.init );
+            analyze_block( *for_loop.init );
             push_var_stack();
-            analyze_block( for_loop.cond );
-            analyze_block( for_loop.body );
-            analyze_block( for_loop.step );
+            analyze_block( *for_loop.cond );
+            analyze_block( *for_loop.body );
+            analyze_block( *for_loop.step );
             pop_var_stack();
             pop_var_stack();
         } else if ( auto fn_def = FunctionDef( node ) ) {
             analyze_block( node.nodes->itr().skip( 2 ).get() );
             SymbolId new_id = match_new_symbol( fn_def.fn_symbol, node.ifi );
-            fn_def.update_symbol_id( node, new_id );
+            *fn_def.fn_symbol_id = new_id;
         } else {
             // Normal nodes
             // Simply recurse into subnodes
@@ -252,14 +254,19 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                      asnop.type == ArithType::Sub ||
                      asnop.type == ArithType::Mul ||
                      asnop.type == ArithType::Div ||
-                     asnop.type == ArithType::Mod ) {
+                     asnop.type == ArithType::Mod ||
+                     asnop.type == ArithType::BAnd ||
+                     asnop.type == ArithType::BOr ||
+                     asnop.type == ArithType::BXor ||
+                     asnop.type == ArithType::Shl ||
+                     asnop.type == ArithType::Shr ) {
                     auto asnop_tok = node.nodes->first().value().get().tok;
 
                     // Inner operation
                     auto inner_node = AstNode{ AT::BinOp };
                     inner_node.nodes = std::make_shared<AstCont>();
-                    inner_node.nodes->put( asnop.lvalue );
-                    inner_node.nodes->put( asnop.value );
+                    inner_node.nodes->put( *asnop.lvalue );
+                    inner_node.nodes->put( *asnop.value );
                     inner_node.tok = asnop_tok;
                     inner_node.tok->content =
                         inner_node.tok->content.substr( 0, 1 );
@@ -268,7 +275,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Outer node
                     auto outer_node = AstNode{ AT::AsnOp };
                     outer_node.nodes = std::make_shared<AstCont>();
-                    outer_node.nodes->put( asnop.lvalue );
+                    outer_node.nodes->put( *asnop.lvalue );
                     outer_node.nodes->put( inner_node );
                     outer_node.tok = asnop_tok;
                     outer_node.tok->content =
@@ -298,7 +305,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Ternary operator
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.nodes->put( *uni_op.rhs );
                     tern_op.nodes->put( const_false );
                     tern_op.nodes->put( const_true );
                     tern_op.tok = node.tok;
@@ -320,7 +327,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Ternary operator
                     auto tern_op = AstNode{ AT::BinOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.nodes->put( *uni_op.rhs );
                     tern_op.nodes->put( const_ones );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "^";
@@ -342,7 +349,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     auto tern_op = AstNode{ AT::BinOp };
                     tern_op.nodes = std::make_shared<AstCont>();
                     tern_op.nodes->put( const_zero );
-                    tern_op.nodes->put( uni_op.rhs );
+                    tern_op.nodes->put( *uni_op.rhs );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "-";
                     tern_op.ifi = tern_op.tok->ifi;
@@ -369,9 +376,9 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Translate short-circuit "&&" to ternary operator.
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( bin_op.lhs );
-                    tern_op.nodes->put( bin_op.rhs );
-                    tern_op.nodes->put( const_true );
+                    tern_op.nodes->put( *bin_op.lhs );
+                    tern_op.nodes->put( *bin_op.rhs );
+                    tern_op.nodes->put( const_false );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "?";
                     tern_op.ifi = tern_op.tok->ifi;
@@ -383,9 +390,9 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     // Translate short-circuit "||" to ternary operator.
                     auto tern_op = AstNode{ AT::TernOp };
                     tern_op.nodes = std::make_shared<AstCont>();
-                    tern_op.nodes->put( bin_op.lhs );
+                    tern_op.nodes->put( *bin_op.lhs );
                     tern_op.nodes->put( const_true );
-                    tern_op.nodes->put( bin_op.rhs );
+                    tern_op.nodes->put( *bin_op.rhs );
                     tern_op.tok = node.tok;
                     tern_op.tok->content = "?";
                     tern_op.ifi = tern_op.tok->ifi;
