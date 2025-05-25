@@ -804,7 +804,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
             if ( itr.match( ast( AT::DeclUninit ), ast( AT::Paren ),
                             ast( AT::Block ) ) &&
-                 paren.nodes->empty() ) {
+                 head.tok->content == "int" && paren.nodes->empty() ) {
                 // Is "int <ident> ( ... ) { ... }"
                 // Remove two consumed elements.
                 itr.erase_self();

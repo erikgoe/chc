@@ -72,7 +72,7 @@ String Mir::MirInstr::type_name() const {
 void add_jump_label_target(
     Mir &mir, i32 label_id,
     EagerContainer<Mir::MirInstr>::Iterator instr_itr ) {
-    if ( mir.jump_table.size() <= label_id )
+    if ( mir.jump_table.size() <= static_cast<size_t>( label_id ) )
         mir.jump_table.resize( label_id + 1 );
     mir.jump_table[label_id] = instr_itr;
 }
@@ -200,7 +200,6 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
-        VarId tmp_body = mir.next_var++;
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
         write_mir_instr( state, mir, while_loop.cond, tmp );
@@ -217,7 +216,6 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
         VarId tmp = mir.next_var++;
-        VarId tmp_body = mir.next_var++;
         write_mir_instr( state, mir, for_loop.init, tmp );
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
