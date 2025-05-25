@@ -267,13 +267,14 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto ident = itr.get();
+            auto type_ident = itr.get();
             if ( parent.type == AT::Type )
                 return false;
-            if ( ident.match( ast_tok( TT::Keyword, "int" ) ) ||
-                 ident.match( ast_tok( TT::Keyword, "bool" ) ) ) {
+            if ( type_ident.match( ast_tok( TT::Keyword, "int" ) ) ||
+                 type_ident.match( ast_tok( TT::Keyword, "bool" ) ) ) {
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::Type, *ident.tok, { ident } );
+                itr.get() = make_merged_node( AT::Type, *type_ident.tok,
+                                              { type_ident } );
                 return true;
             }
             return false;
@@ -283,18 +284,16 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto ident = itr.get();
+            auto kw = itr.get();
             if ( parent.type != AT::BreakStmt &&
-                 ident.match( ast_tok( TT::Keyword, "break" ) ) ) {
+                 kw.match( ast_tok( TT::Keyword, "break" ) ) ) {
                 // Replace with merged token
-                itr.get() =
-                    make_merged_node( AT::BreakStmt, *ident.tok, { ident } );
+                itr.get() = make_merged_node( AT::BreakStmt, *kw.tok, {} );
                 return true;
             } else if ( parent.type != AT::ContinueStmt &&
-                        ident.match( ast_tok( TT::Keyword, "continue" ) ) ) {
+                        kw.match( ast_tok( TT::Keyword, "continue" ) ) ) {
                 // Replace with merged token
-                itr.get() =
-                    make_merged_node( AT::ContinueStmt, *ident.tok, { ident } );
+                itr.get() = make_merged_node( AT::ContinueStmt, *kw.tok, {} );
                 return true;
             }
             return false;
@@ -658,155 +657,156 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     // print_ast( root_node, "=After semicolons" ); // DEBUG
 
-    // If statements
+    // Control flow
     apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto if_kw = itr.get();
-            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto true_block = itr.skip( 2 ).get_or( ast( AT::None ) );
-            auto else_kw = itr.skip( 3 ).get_or( ast( AT::None ) );
-            auto false_block = itr.skip( 4 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "if" ), ast( AT::Paren ) ) &&
-                 !paren.nodes->empty() && is_stmt( true_block ) ) {
-                if ( itr.skip( 3 ).match( ast_tok( TT::Keyword, "else" ) ) &&
-                     is_stmt( false_block ) ) {
-                    // Is "if (...) { ... } else { ... }"
-                    // if-else
-                    // Remove four consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::IfElseStmt, *if_kw.tok,
-                                          { paren, true_block, false_block } );
-                } else {
-                    // Is "if (...) { ... }" without else
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() = make_merged_node( AT::IfStmt, *if_kw.tok,
-                                                  { paren, true_block } );
-                }
-                return true;
-            }
-            return false;
-        } );
-
-    // While loop
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto if_kw = itr.get();
-            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "while" ),
-                            ast( AT::Paren ) ) &&
-                 !paren.nodes->empty() && is_stmt( block ) ) {
-                // Is "while (...) { ... }"
-                // Remove two consumed elements.
-                itr.erase_self();
-                itr.erase_self();
-                // Replace with merged token
-                itr.get() = make_merged_node( AT::WhileLoop, *if_kw.tok,
-                                              { paren, block } );
-                return true;
-            }
-            return false;
-        } );
-
-    // For loop
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto none = ast( AT::None );
-            auto for_kw = itr.get();
-            auto paren = itr.skip( 1 ).get_or( none );
-            auto block = itr.skip( 2 ).get_or( none );
-            // For loops have kind of a messy syntax...
-            if ( itr.match( ast_tok( TT::Keyword, "for" ), ast( AT::Paren ) ) &&
-                 paren.nodes->length() <= 4 && is_stmt( block ) ) {
-                auto pb = paren.nodes->itr(); // paren body
-                auto &pb0 = pb.get();
-                auto &pb1 =
-                    pb.skip( 1 ).get_or( none ); // Always the inner expr
-                auto &pb2 = pb.skip( 2 ).get_or( none );
-                bool valid = false;
-                if ( is_expr( pb1 ) && pb2.type == AT::Token &&
-                     pb2.tok->content == ";" ) {
-                    pb.skip( 2 )
-                        .erase_self(); // Erase semicolon, nos pb2 is 3rd param
-                    if ( pb.match( ast( AT::Stmt ) ) && is_stmt_body( pb2 ) ) {
-                        // Is "for (<stmt>; <expr>; <stmt>) { ... }"
-
-                        // Wrap third parameter into statement
-                        auto third_param = ast( AT::Stmt );
-                        // Dummy container is needed here
-                        third_param.nodes = std::make_shared<AstCont>();
-                        third_param.nodes->put( pb2 );
-                        paren.nodes->put( third_param );
-                        pb.skip( 2 ).erase_self();
-
-                        valid = true;
-                    } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) &&
-                                is_stmt_body( pb2 ) ) {
-                        // Is "for (; <expr>; <stmt>) { ... }"
-
-                        // First argument is equivalent to an empty block
-                        pb0 = ast( AT::Block );
-                        // Dummy container is needed here
-                        pb0.nodes = std::make_shared<AstCont>();
-
-                        // Wrap third parameter into statement
-                        auto third_param = ast( AT::Stmt );
-                        // Dummy container is needed here
-                        third_param.nodes = std::make_shared<AstCont>();
-                        third_param.nodes->put( pb2 );
-                        paren.nodes->put( third_param );
-                        pb.skip( 2 ).erase_self();
-
-                        valid = true;
-                    } else if ( pb.match( ast( AT::Stmt ) ) ) {
-                        // Is "for (<stmt>; <expr>;) { ... }"
-
-                        // Add a third parameter as empty block
-                        auto third_param = ast( AT::Block );
-                        // Dummy container is needed here
-                        third_param.nodes = std::make_shared<AstCont>();
-                        paren.nodes->put( third_param );
-
-                        valid = true;
-                    } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) ) {
-                        // Is "for (; <expr>;) { ... }"
-
-                        // First argument is equivalent to an empty block
-                        pb0 = ast( AT::Block );
-                        // Dummy container is needed here
-                        pb0.nodes = std::make_shared<AstCont>();
-
-                        // Add a third parameter as empty block
-                        auto third_param = ast( AT::Block );
-                        // Dummy container is needed here
-                        third_param.nodes = std::make_shared<AstCont>();
-                        paren.nodes->put( third_param );
-
-                        valid = true;
+            // If & If-else statements
+            {
+                auto if_kw = itr.get();
+                auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
+                auto true_block = itr.skip( 2 ).get_or( ast( AT::None ) );
+                auto else_kw = itr.skip( 3 ).get_or( ast( AT::None ) );
+                auto false_block = itr.skip( 4 ).get_or( ast( AT::None ) );
+                if ( itr.match( ast_tok( TT::Keyword, "if" ),
+                                ast( AT::Paren ) ) &&
+                     !paren.nodes->empty() && is_stmt( true_block ) ) {
+                    if ( itr.skip( 3 ).match(
+                             ast_tok( TT::Keyword, "else" ) ) &&
+                         is_stmt( false_block ) ) {
+                        // Is "if (...) { ... } else { ... }"
+                        // if-else
+                        // Remove four consumed elements.
+                        itr.erase_self();
+                        itr.erase_self();
+                        itr.erase_self();
+                        itr.erase_self();
+                        // Replace with merged token
+                        itr.get() = make_merged_node(
+                            AT::IfElseStmt, *if_kw.tok,
+                            { paren, true_block, false_block } );
+                    } else {
+                        // Is "if (...) { ... }" without else
+                        // Remove two consumed elements.
+                        itr.erase_self();
+                        itr.erase_self();
+                        // Replace with merged token
+                        itr.get() = make_merged_node( AT::IfStmt, *if_kw.tok,
+                                                      { paren, true_block } );
                     }
+                    return true;
                 }
-                auto step_type = paren.nodes->itr().skip( 2 ).get().type;
-                if ( valid && step_type != AT::Decl &&
-                     step_type != AT::DeclUninit ) {
+            }
+
+            // While loops
+            {
+                auto if_kw = itr.get();
+                auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
+                auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
+                if ( itr.match( ast_tok( TT::Keyword, "while" ),
+                                ast( AT::Paren ) ) &&
+                     !paren.nodes->empty() && is_stmt( block ) ) {
+                    // Is "while (...) { ... }"
                     // Remove two consumed elements.
                     itr.erase_self();
                     itr.erase_self();
-
                     // Replace with merged token
-                    itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
+                    itr.get() = make_merged_node( AT::WhileLoop, *if_kw.tok,
                                                   { paren, block } );
                     return true;
+                }
+            }
+
+            // For loops
+            {
+                auto none = ast( AT::None );
+                auto for_kw = itr.get();
+                auto paren = itr.skip( 1 ).get_or( none );
+                auto block = itr.skip( 2 ).get_or( none );
+                // For loops have kind of a messy syntax...
+                if ( itr.match( ast_tok( TT::Keyword, "for" ),
+                                ast( AT::Paren ) ) &&
+                     paren.nodes->length() <= 4 && is_stmt( block ) ) {
+                    auto pb = paren.nodes->itr(); // paren body
+                    auto &pb0 = pb.get();
+                    auto &pb1 =
+                        pb.skip( 1 ).get_or( none ); // Always the inner expr
+                    auto &pb2 = pb.skip( 2 ).get_or( none );
+                    bool valid = false;
+                    if ( is_expr( pb1 ) && pb2.type == AT::Token &&
+                         pb2.tok->content == ";" ) {
+                        pb.skip( 2 ).erase_self(); // Erase semicolon, nos pb2
+                                                   // is 3rd param
+                        if ( pb.match( ast( AT::Stmt ) ) &&
+                             is_stmt_body( pb2 ) ) {
+                            // Is "for (<stmt>; <expr>; <stmt>) { ... }"
+
+                            // Wrap third parameter into statement
+                            auto third_param = ast( AT::Stmt );
+                            // Dummy container is needed here
+                            third_param.nodes = std::make_shared<AstCont>();
+                            third_param.nodes->put( pb2 );
+                            paren.nodes->put( third_param );
+                            pb.skip( 2 ).erase_self();
+
+                            valid = true;
+                        } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) &&
+                                    is_stmt_body( pb2 ) ) {
+                            // Is "for (; <expr>; <stmt>) { ... }"
+
+                            // First argument is equivalent to an empty block
+                            pb0 = ast( AT::Block );
+                            // Dummy container is needed here
+                            pb0.nodes = std::make_shared<AstCont>();
+
+                            // Wrap third parameter into statement
+                            auto third_param = ast( AT::Stmt );
+                            // Dummy container is needed here
+                            third_param.nodes = std::make_shared<AstCont>();
+                            third_param.nodes->put( pb2 );
+                            paren.nodes->put( third_param );
+                            pb.skip( 2 ).erase_self();
+
+                            valid = true;
+                        } else if ( pb.match( ast( AT::Stmt ) ) ) {
+                            // Is "for (<stmt>; <expr>;) { ... }"
+
+                            // Add a third parameter as empty block
+                            auto third_param = ast( AT::Block );
+                            // Dummy container is needed here
+                            third_param.nodes = std::make_shared<AstCont>();
+                            paren.nodes->put( third_param );
+
+                            valid = true;
+                        } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) ) {
+                            // Is "for (; <expr>;) { ... }"
+
+                            // First argument is equivalent to an empty block
+                            pb0 = ast( AT::Block );
+                            // Dummy container is needed here
+                            pb0.nodes = std::make_shared<AstCont>();
+
+                            // Add a third parameter as empty block
+                            auto third_param = ast( AT::Block );
+                            // Dummy container is needed here
+                            third_param.nodes = std::make_shared<AstCont>();
+                            paren.nodes->put( third_param );
+
+                            valid = true;
+                        }
+                    }
+                    auto step_type = paren.nodes->itr().skip( 2 ).get().type;
+                    if ( valid && step_type != AT::Decl &&
+                         step_type != AT::DeclUninit ) {
+                        // Remove two consumed elements.
+                        itr.erase_self();
+                        itr.erase_self();
+
+                        // Replace with merged token
+                        itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
+                                                      { paren, block } );
+                        return true;
+                    }
                 }
             }
             return false;
@@ -817,7 +817,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( parent.type != AT::GlobalScope )
-                return false; // Only allow function definitions in global scope
+                return false; // Only allow function definitions in global
+                              // scope
             auto head = itr.get();
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
