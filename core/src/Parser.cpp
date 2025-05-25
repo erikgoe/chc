@@ -285,13 +285,13 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto ident = itr.get();
             if ( parent.type != AT::BreakStmt &&
-                 ident.match( ast_tok( TT::Identifier, "break" ) ) ) {
+                 ident.match( ast_tok( TT::Keyword, "break" ) ) ) {
                 // Replace with merged token
                 itr.get() =
                     make_merged_node( AT::BreakStmt, *ident.tok, { ident } );
                 return true;
             } else if ( parent.type != AT::ContinueStmt &&
-                        ident.match( ast_tok( TT::Identifier, "continue" ) ) ) {
+                        ident.match( ast_tok( TT::Keyword, "continue" ) ) ) {
                 // Replace with merged token
                 itr.get() =
                     make_merged_node( AT::ContinueStmt, *ident.tok, { ident } );
