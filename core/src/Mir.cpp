@@ -255,13 +255,13 @@ std::pair<MI *, MI *> get_successors(
 }
 
 void analyze_liveness( CompilerState &state, Mir &mir ) {
-    auto itr = mir.instrs.end();
     auto none = MI{};
     bool saturated = false;
     // TODO Maybe find a better way instead of dump repetition. Also for
     // analyze_neededness() and trim_dead_code().
     while ( !saturated ) {
         saturated = true;
+        auto itr = mir.instrs.end();
         while ( itr != mir.instrs.begin() ) {
             itr.skip_self( -1 );
             auto &instr = itr.get();
@@ -301,11 +301,11 @@ bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
 }
 
 void analyze_neededness( CompilerState &state, Mir &mir ) {
-    auto itr = mir.instrs.end();
     auto none = MI{};
     bool saturated = false;
     while ( !saturated ) {
         saturated = true;
+        auto itr = mir.instrs.end();
         while ( itr != mir.instrs.begin() ) {
             itr.skip_self( -1 );
             auto &instr = itr.get();
