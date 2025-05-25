@@ -69,6 +69,19 @@ String Mir::MirInstr::type_name() const {
     }
 }
 
+Mir::TypeId str_to_type( CompilerState &state, const String &str,
+                         InFileInfo ifi ) {
+    if ( str == "int" ) {
+        return Mir::TYPE_INT;
+    } else if ( str == "bool" ) {
+        return Mir::TYPE_BOOL;
+    } else {
+        make_error_msg( state, "Unknown type name", ifi,
+                        RetCode::SemanticError );
+        return 0;
+    }
+}
+
 void add_jump_label_target(
     Mir &mir, i32 label_id,
     EagerContainer<Mir::MirInstr>::Iterator instr_itr ) {
@@ -124,9 +137,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         write_mir_instr( state, mir, *decl.init, variable );
+        mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
     } else if ( auto decl = DeclUninitStmt( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
+        mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id->value()];
         mir.instrs.put( MI{ MT::Mov, into_var, variable, 0, 0, node.ifi } );
@@ -145,11 +160,12 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             itr.skip_self( 1 );
         }
     } else if ( auto int_const = IntConst( node ) ) {
-        mir.instrs.put(
-            MI{ MT::Const, into_var, 0, 0, int_const.value, node.ifi } );
+        mir.instrs.put( MI{ MT::Const, into_var, 0, 0, int_const.value,
+                            node.ifi, ArithType::None, Mir::TYPE_INT } );
     } else if ( auto bool_const = BoolConst( node ) ) {
         mir.instrs.put( MI{ MT::Const, into_var, 0, 0,
-                            bool_const.value ? -1 : 0, node.ifi } );
+                            bool_const.value ? -1 : 0, node.ifi,
+                            ArithType::None, Mir::TYPE_BOOL } );
     } else if ( auto stmt = AsnOpStmt( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
@@ -166,10 +182,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto tern_op = TernOp( node ) ) {
         i32 else_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
-        VarId tmp = mir.next_var++;
+        VarId cond = mir.next_var++;
+        mir.type_of( cond ) = Mir::TYPE_BOOL;
         // This is where it stops being real SSA (writing into into_var twice).
-        write_mir_instr( state, mir, *tern_op.lhs, tmp );
-        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
+        write_mir_instr( state, mir, *tern_op.lhs, cond );
+        mir.instrs.put( MI{ MT::JZero, 0, cond, 0, else_lbl, node.ifi } );
         write_mir_instr( state, mir, *tern_op.mid, into_var );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
         add_jump_label_target( mir, else_lbl, mir.instrs.end() );
@@ -181,11 +198,14 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         bool has_else = if_stmt.false_stmt.type != AT::None;
         i32 else_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
-        VarId tmp = mir.next_var++;
+        VarId cond = mir.next_var++;
+        mir.type_of( cond ) = Mir::TYPE_BOOL;
         VarId tmp_true = mir.next_var++;
+        mir.type_of( tmp_true ) = Mir::TYPE_BOOL;
         VarId tmp_false = mir.next_var++;
-        write_mir_instr( state, mir, *if_stmt.cond, tmp );
-        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, else_lbl, node.ifi } );
+        mir.type_of( tmp_false ) = Mir::TYPE_BOOL;
+        write_mir_instr( state, mir, *if_stmt.cond, cond );
+        mir.instrs.put( MI{ MT::JZero, 0, cond, 0, else_lbl, node.ifi } );
         write_mir_instr( state, mir, if_stmt.true_stmt, tmp_true );
         if ( has_else ) {
             mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, skip_lbl, node.ifi } );
@@ -200,14 +220,15 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto while_loop = WhileLoop( node ) ) {
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
-        VarId tmp = mir.next_var++;
+        VarId cond = mir.next_var++;
+        mir.type_of( cond ) = Mir::TYPE_BOOL;
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
-        write_mir_instr( state, mir, *while_loop.cond, tmp );
-        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
+        write_mir_instr( state, mir, *while_loop.cond, cond );
+        mir.instrs.put( MI{ MT::JZero, 0, cond, 0, skip_lbl, node.ifi } );
         mir.continue_stack.push_back( loop_lbl );
         mir.break_stack.push_back( skip_lbl );
-        write_mir_instr( state, mir, *while_loop.body, tmp );
+        write_mir_instr( state, mir, *while_loop.body, mir.next_var++ );
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
@@ -216,18 +237,19 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto for_loop = ForLoop( node ) ) {
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
-        VarId tmp = mir.next_var++;
-        write_mir_instr( state, mir, *for_loop.init, tmp );
+        VarId cond = mir.next_var++;
+        mir.type_of( cond ) = Mir::TYPE_BOOL;
+        write_mir_instr( state, mir, *for_loop.init, mir.next_var++ );
         add_jump_label_target( mir, loop_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
-        write_mir_instr( state, mir, *for_loop.cond, tmp );
-        mir.instrs.put( MI{ MT::JZero, 0, tmp, 0, skip_lbl, node.ifi } );
+        write_mir_instr( state, mir, *for_loop.cond, cond );
+        mir.instrs.put( MI{ MT::JZero, 0, cond, 0, skip_lbl, node.ifi } );
         mir.continue_stack.push_back( loop_lbl );
         mir.break_stack.push_back( skip_lbl );
-        write_mir_instr( state, mir, *for_loop.body, tmp );
+        write_mir_instr( state, mir, *for_loop.body, mir.next_var++ );
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
-        write_mir_instr( state, mir, *for_loop.step, tmp );
+        write_mir_instr( state, mir, *for_loop.step, mir.next_var++ );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );

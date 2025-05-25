@@ -24,6 +24,7 @@ void split_into_lines( const String &str, std::vector<String> &lines ) {
             tmp += c;
         }
     }
+    lines.push_back( tmp ); // Last line
 }
 
 size_t line_from_offset( const String &str, size_t offset ) {

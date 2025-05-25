@@ -100,6 +100,77 @@ enum class ArithType {
     count
 };
 
+inline bool has_only_bool_params( ArithType t ) {
+    switch ( t ) {
+    case ArithType::LNot:
+    case ArithType::LAnd:
+    case ArithType::LOr:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool has_only_int_params( ArithType t ) {
+    switch ( t ) {
+    case ArithType::Add:
+    case ArithType::Sub:
+    case ArithType::Mul:
+    case ArithType::Div:
+    case ArithType::Mod:
+    case ArithType::Neg:
+    case ArithType::Shl:
+    case ArithType::Shr:
+    case ArithType::Less:
+    case ArithType::Greater:
+    case ArithType::LessEq:
+    case ArithType::GreaterEq:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool has_any_type_params( ArithType t ) {
+    switch ( t ) {
+    case ArithType::None:
+    case ArithType::Eq:
+    case ArithType::UnEq:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool has_only_bool_ret( ArithType t ) {
+    switch ( t ) {
+    case ArithType::Eq:
+    case ArithType::UnEq:
+    case ArithType::Less:
+    case ArithType::Greater:
+    case ArithType::LessEq:
+    case ArithType::GreaterEq:
+    case ArithType::LNot:
+    case ArithType::LAnd:
+    case ArithType::LOr:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool has_only_int_ret( ArithType t ) {
+    switch ( t ) {
+    case ArithType::Add:
+    case ArithType::Sub:
+    case ArithType::Mul:
+    case ArithType::Div:
+    case ArithType::Mod:
+    case ArithType::Neg:
+    case ArithType::Shl:
+    case ArithType::Shr:
+        return true;
+    default:
+        return false;
+    }
+}
+
 AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens );
 
 } // namespace chc

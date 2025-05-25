@@ -36,10 +36,12 @@ struct Mir {
         InFileInfo ifi;
 
         ArithType subtype = ArithType::None;
-        TypeId result_type = 0; // TODO
+        TypeId result_type = 0;
 
         std::set<VarId> live;
         std::set<VarId> needed; // Needed variables
+
+        bool reachable = false;
 
         String type_name() const;
     };
@@ -57,6 +59,13 @@ struct Mir {
 
     std::vector<RegId> reg_mapping;
     RegId reg_count = 0; // Maximum used registers
+
+    std::vector<TypeId> types; // Maps variables to types
+    TypeId &type_of( VarId var ) {
+        if ( types.size() <= var )
+            types.resize( var + 1 );
+        return types[var];
+    }
 
     static constexpr TypeId TYPE_INT = 1;
     static constexpr TypeId TYPE_BOOL = 2;

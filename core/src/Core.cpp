@@ -35,6 +35,9 @@ void Core::compile() {
             use_before_init_check( state, mir );
             if ( !state.success )
                 return;
+            type_checking( state, mir );
+            if ( !state.success )
+                return;
 
             analyze_liveness( state, mir );
             analyze_neededness( state, mir );

@@ -475,4 +475,75 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     } );
 }
 
+void type_checking( CompilerState &state, Mir &mir ) {
+    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+        if ( instr.type == MT::Const ) {
+            if ( mir.type_of( instr.result ) != 0 &&
+                 mir.type_of( instr.result ) != instr.result_type ) {
+                make_error_msg( state, "Type mismatch", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = instr.result_type;
+        } else if ( instr.type == MT::BinOp ) {
+            if ( mir.type_of( instr.p0 ) == 0 ||
+                 mir.type_of( instr.p0 ) == 0 ) {
+                make_error_msg( state, "Variable untyped", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            if ( mir.type_of( instr.p0 ) != mir.type_of( instr.p1 ) ) {
+                make_error_msg( state, "Type mismatch", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            if ( ( has_only_int_params( instr.subtype ) &&
+                   mir.type_of( instr.p0 ) != Mir::TYPE_INT ) ||
+                 ( has_only_int_ret( instr.subtype ) &&
+                   mir.type_of( instr.result ) != 0 &&
+                   mir.type_of( instr.result ) != Mir::TYPE_INT ) ) {
+                make_error_msg( state, "Expected type 'int'", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            if ( ( has_only_bool_params( instr.subtype ) &&
+                   mir.type_of( instr.p0 ) != Mir::TYPE_BOOL ) ||
+                 ( has_only_bool_ret( instr.subtype ) &&
+                   mir.type_of( instr.result ) != 0 &&
+                   mir.type_of( instr.result ) != Mir::TYPE_BOOL ) ) {
+                make_error_msg( state, "Expected type 'bool'", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            if ( has_only_int_ret( instr.subtype ) ) {
+                mir.type_of( instr.result ) = mir.TYPE_INT;
+            } else if ( has_only_bool_ret( instr.subtype ) ) {
+                mir.type_of( instr.result ) = mir.TYPE_BOOL;
+            }
+        } else if ( instr.type == MT::Ret ) {
+            if ( mir.type_of( instr.p0 ) != Mir::TYPE_INT ) {
+                // TODO generalize as soon as functions can have any type
+                make_error_msg( state, "Expected return type 'int'", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+        } else if ( instr.type == MT::Mov ) {
+            if ( instr.p0 != 0 ) {
+                if ( mir.type_of( instr.p0 ) == 0 ) {
+                    make_error_msg( state, "Variable untyped", instr.ifi,
+                                    RetCode::SemanticError );
+                    return;
+                }
+                if ( mir.type_of( instr.result ) != 0 &&
+                     mir.type_of( instr.result ) != mir.type_of( instr.p0 ) ) {
+                    make_error_msg( state, "Type mismatch", instr.ifi,
+                                    RetCode::SemanticError );
+                    return;
+                }
+                mir.type_of( instr.result ) = mir.type_of( instr.p0 );
+            }
+        }
+    } );
+}
+
 } // namespace chc

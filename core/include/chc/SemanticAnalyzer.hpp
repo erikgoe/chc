@@ -11,4 +11,6 @@ void operator_transformation( CompilerState &state, AstNode &root_node );
 
 void use_before_init_check( CompilerState &state, Mir &mir );
 
+void type_checking( CompilerState &state, Mir &mir );
+
 } // namespace chc
