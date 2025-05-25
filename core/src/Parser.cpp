@@ -667,11 +667,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto true_block = itr.skip( 2 ).get_or( ast( AT::None ) );
             auto else_kw = itr.skip( 3 ).get_or( ast( AT::None ) );
             auto false_block = itr.skip( 4 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "if" ), ast( AT::Paren ),
-                            ast( AT::Block ) ) &&
-                 !paren.nodes->empty() ) {
-                if ( itr.skip( 3 ).match( ast_tok( TT::Keyword, "else" ),
-                                          ast( AT::Block ) ) ) {
+            if ( itr.match( ast_tok( TT::Keyword, "if" ), ast( AT::Paren ) ) &&
+                 !paren.nodes->empty() && is_stmt( true_block ) ) {
+                if ( itr.skip( 3 ).match( ast_tok( TT::Keyword, "else" ) ) &&
+                     is_stmt( false_block ) ) {
                     // Is "if (...) { ... } else { ... }"
                     // if-else
                     // Remove four consumed elements.
@@ -704,8 +703,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto if_kw = itr.get();
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "while" ), ast( AT::Paren ),
-                            ast( AT::Block ) ) ) {
+            if ( itr.match( ast_tok( TT::Keyword, "while" ),
+                            ast( AT::Paren ) ) &&
+                 !paren.nodes->empty() && is_stmt( block ) ) {
                 // Is "while (...) { ... }"
                 // Remove two consumed elements.
                 itr.erase_self();
@@ -727,9 +727,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto paren = itr.skip( 1 ).get_or( none );
             auto block = itr.skip( 2 ).get_or( none );
             // For loops have kind of a messy syntax...
-            if ( itr.match( ast_tok( TT::Keyword, "for" ), ast( AT::Paren ),
-                            ast( AT::Block ) ) &&
-                 paren.nodes->length() <= 3 ) {
+            if ( itr.match( ast_tok( TT::Keyword, "for" ), ast( AT::Paren ) ) &&
+                 paren.nodes->length() <= 3 && is_stmt( block ) ) {
                 auto pb = paren.nodes->itr(); // paren body
                 auto &pb0 = pb.get();
                 auto &pb1 =
