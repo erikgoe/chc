@@ -542,7 +542,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         } );
 
     // "? :" operator
-    apply_pass_recursively_from_left(
+    apply_pass_recursively_from_right(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto lhs = itr.get();
@@ -552,15 +552,15 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto rhs = itr.skip( 4 ).get_or( ast( AT::None ) );
             if ( is_expr( lhs ) && is_expr( mid ) && is_expr( rhs ) ) {
                 if ( op0.match( ast_tok( TT::Operator, "?" ) ) &&
-                     op0.match( ast_tok( TT::Operator, ":" ) ) ) {
+                     op1.match( ast_tok( TT::Operator, ":" ) ) ) {
                     // Remove four consumed elements.
                     itr.erase_self();
                     itr.erase_self();
                     itr.erase_self();
                     itr.erase_self();
                     // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::TernOp, *op0.tok, { lhs, rhs } );
+                    itr.get() = make_merged_node( AT::TernOp, *op0.tok,
+                                                  { lhs, mid, rhs } );
                     return true;
                 }
             }
