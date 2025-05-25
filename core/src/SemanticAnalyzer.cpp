@@ -268,8 +268,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     inner_node.nodes->put( *asnop.lvalue );
                     inner_node.nodes->put( *asnop.value );
                     inner_node.tok = asnop_tok;
-                    inner_node.tok->content =
-                        inner_node.tok->content.substr( 0, 1 );
+                    inner_node.tok->content = inner_node.tok->content.substr(
+                        0, inner_node.tok->content.length() - 1 );
                     inner_node.ifi = inner_node.tok->ifi;
 
                     // Outer node
@@ -278,8 +278,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     outer_node.nodes->put( *asnop.lvalue );
                     outer_node.nodes->put( inner_node );
                     outer_node.tok = asnop_tok;
-                    outer_node.tok->content =
-                        outer_node.tok->content.substr( 1, 1 );
+                    outer_node.tok->content = outer_node.tok->content.substr(
+                        outer_node.tok->content.length() - 1 );
                     outer_node.ifi = outer_node.tok->ifi;
 
                     // Replace
@@ -519,6 +519,8 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 mir.type_of( instr.result ) = mir.TYPE_INT;
             } else if ( has_only_bool_ret( instr.subtype ) ) {
                 mir.type_of( instr.result ) = mir.TYPE_BOOL;
+            } else if ( has_any_type_ret( instr.subtype ) ) {
+                mir.type_of( instr.result ) = mir.type_of( instr.p0 );
             }
         } else if ( instr.type == MT::Ret ) {
             if ( mir.type_of( instr.p0 ) != Mir::TYPE_INT ) {

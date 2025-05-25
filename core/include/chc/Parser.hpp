@@ -129,16 +129,6 @@ inline bool has_only_int_params( ArithType t ) {
         return false;
     }
 }
-inline bool has_any_type_params( ArithType t ) {
-    switch ( t ) {
-    case ArithType::None:
-    case ArithType::Eq:
-    case ArithType::UnEq:
-        return true;
-    default:
-        return false;
-    }
-}
 inline bool has_only_bool_ret( ArithType t ) {
     switch ( t ) {
     case ArithType::Eq:
@@ -165,6 +155,20 @@ inline bool has_only_int_ret( ArithType t ) {
     case ArithType::Neg:
     case ArithType::Shl:
     case ArithType::Shr:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool has_any_type_ret( ArithType t ) {
+    switch ( t ) {
+    case ArithType::None:
+    case ArithType::Eq:
+    case ArithType::UnEq:
+    case ArithType::BInv:
+    case ArithType::BAnd:
+    case ArithType::BOr:
+    case ArithType::BXor:
         return true;
     default:
         return false;
