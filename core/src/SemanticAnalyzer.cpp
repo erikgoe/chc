@@ -457,6 +457,7 @@ using VarId = Mir::VarId;
 
 void use_before_init_check( CompilerState &state, Mir &mir ) {
     std::deque<EagerContainer<Mir::MirInstr>::Iterator> to_check;
+    std::set<EagerContainer<Mir::MirInstr>::Iterator> already_checked;
     std::set<VarId> defs;
     to_check.push_back( mir.instrs.itr() );
 
@@ -474,6 +475,9 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     while ( !to_check.empty() ) {
         auto instr_itr = to_check.front();
         to_check.pop_front();
+        if ( already_checked.find( instr_itr ) != already_checked.end() )
+            continue;
+        already_checked.insert( instr_itr );
 
         // Add successors
         if ( instr_itr.get().type == MT::Jmp ) {

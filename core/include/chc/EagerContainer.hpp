@@ -153,6 +153,9 @@ public:
         bool operator!=( const Iterator other ) const {
             return !( *this == other );
         }
+        bool operator<( const Iterator other ) const {
+            return cont == other.cont && idx < other.idx;
+        }
     };
     friend class Iterator;
 
