@@ -264,6 +264,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                 aoc = AOC::None;
                 break;
             }
+
             // Add the actual instructions
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             auto rhs_reg = make_available( instr.p1, instr.ifi );
@@ -276,6 +277,14 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                  instr.subtype == ArithType::LessEq ) {
                 put_reg_reg( AOC::Cmp, HwReg::eax, rhs_reg, instr.ifi );
                 put_reg( aoc, HwReg::eax, instr.ifi );
+            } else if ( instr.subtype == ArithType::Shl ||
+                        instr.subtype == ArithType::Shr ) {
+                // Because shifts must go through ecx, temporarily swap ecx and
+                // edx (which is always free).
+                put_reg_reg( AOC::Mov, HwReg::edx, HwReg::ecx, instr.ifi );
+                put_reg_reg( AOC::Mov, HwReg::ecx, rhs_reg, instr.ifi );
+                put_reg( aoc, HwReg::eax, instr.ifi );
+                put_reg_reg( AOC::Mov, HwReg::ecx, HwReg::edx, instr.ifi );
             } else {
                 put_reg_reg( aoc, HwReg::eax, rhs_reg, instr.ifi );
             }
@@ -398,9 +407,9 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::Xor ) {
             make_reg_reg_op( "xor", op );
         } else if ( op.opcode == AOC::Shl ) {
-            make_reg_reg_op( "sal", op );
+            put_asm( "sal %cl, " + to_reg_str( op.dest ) );
         } else if ( op.opcode == AOC::Shr ) {
-            make_reg_reg_op( "sar", op );
+            put_asm( "sar %cl, " + to_reg_str( op.dest ) );
         } else if ( op.opcode == AOC::SetEq ) {
             put_asm( "sete %al" );
         } else if ( op.opcode == AOC::SetBelow ) {
