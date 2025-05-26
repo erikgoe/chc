@@ -43,6 +43,7 @@ struct Assembly_x86 {
         MovConst, // "mov $<imm>, <dest>"
         MovFromStack, // "movl $<imm>(%esp), <dest>"
         MovToStack, // "movl <src>, $<imm>(%esp)"
+        MovZeroExtend, // "movzbl %al, %eax"
         Syscall,
         Add,
         Sub,

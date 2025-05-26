@@ -278,6 +278,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                  instr.subtype == ArithType::LessEq ) {
                 put_reg_reg( AOC::Cmp, HwReg::eax, rhs_reg, instr.ifi );
                 put_reg( aoc, HwReg::eax, instr.ifi );
+                put_reg( AOC::MovZeroExtend, HwReg::eax, instr.ifi );
             } else if ( instr.subtype == ArithType::Shl ||
                         instr.subtype == ArithType::Shr ) {
                 // Because shifts must go through ecx, temporarily swap ecx and
@@ -389,6 +390,8 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::MovToStack ) {
             put_asm( "movl " + to_reg_str( op.src ) + ", " +
                      to_string( op.imm ) + "(%rbp)" );
+        } else if ( op.opcode == AOC::MovZeroExtend ) {
+            put_asm( "movzbl %al, %eax" );
         } else if ( op.opcode == AOC::Syscall ) {
             put_asm( "syscall" );
         } else if ( op.opcode == AOC::Add ) {
