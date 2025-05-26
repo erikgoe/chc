@@ -124,12 +124,17 @@ using TT = Token::Type;
 using AstCont = EagerContainer<AstNode>;
 using AstItr = EagerContainer<AstNode>::Iterator;
 
+bool is_asnop_operator( const String &op ) {
+    return op.substr( op.size() - 1 ) == "=" && op != "==" && op != "!=";
+}
+
 bool is_expr( const AstNode &node ) {
-    return ( node.type == AT::Paren && !node.nodes->empty() &&
-             is_expr( node.nodes->first()->get() ) ) ||
-           node.type == AT::IntConst || node.type == AT::Ident ||
-           node.type == AT::BinOp || node.type == AT::UniOp ||
-           node.type == AT::BoolConst || node.type == AT::TernOp;
+    return node.type == AT::Paren || node.type == AT::IntConst ||
+           node.type == AT::Ident ||
+           ( node.type == AT::BinOp &&
+             !is_asnop_operator( node.tok->content ) ) ||
+           node.type == AT::UniOp || node.type == AT::BoolConst ||
+           node.type == AT::TernOp;
 }
 
 bool is_stmt_body( const AstNode &node ) {
@@ -840,6 +845,22 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         } );
 
     // print_ast( root_node, "=After parsing" ); // DEBUG
+
+    // Check for expressions in parenthesis
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( itr.get().type == AT::Paren && parent.type != AT::ForLoop &&
+                 parent.type != AT::FunctionDef ) {
+                auto node = itr.get();
+                if ( !node.nodes || node.nodes->length() != 1 ||
+                     !is_expr( node.nodes->itr().get() ) )
+                    make_error_msg( state,
+                                    "Expected expression in parenthesis.",
+                                    node.ifi, RetCode::SyntaxError );
+            }
+            return false;
+        } );
 
     // Check for Statements in blocks
     apply_pass_recursively_from_left(
