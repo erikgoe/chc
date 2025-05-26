@@ -838,7 +838,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
                 // Check step conditions
                 auto &step = nodes.skip( 2 ).get();
-                if ( !is_stmt_body( step ) ) {
+                if ( !is_stmt_body( step ) && step.type != AT::Block ) {
                     make_error_msg( state,
                                     "Expected statement as step in for-loop.",
                                     step.ifi, RetCode::SyntaxError );
