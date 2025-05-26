@@ -132,28 +132,25 @@ public:
     AstCont *stmts;
 };
 
-class RetStmt : public FacadeBase {
+class Ret : public FacadeBase {
 public:
-    RetStmt( AstNode &to_wrap ) {
-        matches = to_wrap.type == AstNode::Type::Stmt &&
-                  to_wrap.nodes->first()->get().type == AstNode::Type::Ret;
+    Ret( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::Ret;
         if ( matches ) {
-            auto itr = to_wrap.nodes->first()->get().nodes->itr();
-            value = &itr.get();
+            value = &to_wrap.nodes->itr().get();
         }
     }
 
     AstNode *value;
 };
 
-class DeclStmt : public FacadeBase {
+class Decl : public FacadeBase {
 public:
-    DeclStmt( AstNode &to_wrap ) {
-        matches = to_wrap.type == AstNode::Type::Stmt &&
-                  to_wrap.nodes->first()->get().type == AstNode::Type::Decl;
+    Decl( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::Decl;
         if ( matches ) {
-            type = to_wrap.nodes->first()->get().tok->content;
-            auto itr = to_wrap.nodes->first()->get().nodes->itr();
+            type = to_wrap.tok->content;
+            auto itr = to_wrap.nodes->itr();
             auto asnop_itr = itr.get().nodes->itr();
             symbol = asnop_itr.get().tok->content;
             symbol_id = &asnop_itr.get().symbol_id;
@@ -167,15 +164,13 @@ public:
     AstNode *init;
 };
 
-class DeclUninitStmt : public FacadeBase {
+class DeclUninit : public FacadeBase {
 public:
-    DeclUninitStmt( AstNode &to_wrap ) {
-        matches =
-            to_wrap.type == AstNode::Type::Stmt &&
-            to_wrap.nodes->first()->get().type == AstNode::Type::DeclUninit;
+    DeclUninit( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::DeclUninit;
         if ( matches ) {
-            type = to_wrap.nodes->first()->get().tok->content;
-            auto itr = to_wrap.nodes->first()->get().nodes->itr();
+            type = to_wrap.tok->content;
+            auto itr = to_wrap.nodes->itr();
             symbol = itr.get().tok->content;
             symbol_id = &itr.get().symbol_id;
         }
@@ -262,22 +257,21 @@ public:
     bool value;
 };
 
-class AsnOpStmt : public FacadeBase {
+class AsnOp : public FacadeBase {
 public:
-    AsnOpStmt( AstNode &to_wrap ) {
-        matches = to_wrap.type == AstNode::Type::Stmt &&
-                  to_wrap.nodes->first()->get().type == AstNode::Type::AsnOp;
+    AsnOp( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::AsnOp;
         if ( matches ) {
-            auto itr = to_wrap.nodes->first()->get().nodes->itr();
+            auto itr = to_wrap.nodes->itr();
             // TODO check that parenthesis has only one subnode
             lvalue = &unwrap_paren( itr.get() );
             value = &itr.skip( 1 ).get();
-            auto &type_str = to_wrap.nodes->first()->get().tok->content;
+            auto &type_str = to_wrap.tok->content;
             type = map_bin_arith( type_str.substr( 0, type_str.size() - 1 ) );
         }
     }
     void update_arith_type( AstNode &wrapped_node, ArithType new_type ) {
-        auto &type_str = wrapped_node.nodes->itr().get().tok->content;
+        auto &type_str = wrapped_node.tok->content;
         type_str = map_bin_arith( new_type ) + "=";
     }
 

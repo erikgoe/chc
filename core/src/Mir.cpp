@@ -113,7 +113,9 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
         }
-    } else if ( auto ret = RetStmt( node ) ) {
+    } else if ( node.type == AT::Stmt ) {
+        write_mir_instr( state, mir, node.nodes->itr().get(), mir.next_var++ );
+    } else if ( auto ret = Ret( node ) ) {
         VarId tmp = mir.next_var++;
         write_mir_instr( state, mir, *ret.value, tmp );
         mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
@@ -135,12 +137,12 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         }
         mir.instrs.put(
             MI{ MT::Jmp, 0, 0, 0, mir.break_stack.back(), node.ifi } );
-    } else if ( auto decl = DeclStmt( node ) ) {
+    } else if ( auto decl = Decl( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         write_mir_instr( state, mir, *decl.init, variable );
         mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
-    } else if ( auto decl = DeclUninitStmt( node ) ) {
+    } else if ( auto decl = DeclUninit( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
@@ -168,7 +170,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::Const, into_var, 0, 0,
                             bool_const.value ? -1 : 0, node.ifi,
                             ArithType::None, Mir::TYPE_BOOL } );
-    } else if ( auto stmt = AsnOpStmt( node ) ) {
+    } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
         VarId variable =

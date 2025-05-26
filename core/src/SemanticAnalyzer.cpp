@@ -115,12 +115,12 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
         };
 
         // Check node
-        if ( auto decl = DeclStmt( node ) ) {
+        if ( auto decl = Decl( node ) ) {
             // Normal variable declaration
             analyze_block( *decl.init );
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
             *decl.symbol_id = new_id;
-        } else if ( auto decl = DeclUninitStmt( node ) ) {
+        } else if ( auto decl = DeclUninit( node ) ) {
             // Normal variable declaration
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
             *decl.symbol_id = new_id;
@@ -248,7 +248,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
             auto &node = itr.get();
             // TODO check if future specifications also only allow asnop as
             // statement and not as expression (which would not match here).
-            if ( auto asnop = AsnOpStmt( node ) ) {
+            if ( auto asnop = AsnOp( node );
+                 asnop && parent.type != AT::Decl ) {
                 // Translate combined asnop into explicit operation.
                 if ( asnop.type == ArithType::Add ||
                      asnop.type == ArithType::Sub ||
@@ -260,7 +261,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                      asnop.type == ArithType::BXor ||
                      asnop.type == ArithType::Shl ||
                      asnop.type == ArithType::Shr ) {
-                    auto asnop_tok = node.nodes->first().value().get().tok;
+                    auto asnop_tok = node.tok;
 
                     // Inner operation
                     auto inner_node = AstNode{ AT::BinOp };
@@ -283,7 +284,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     outer_node.ifi = outer_node.tok->ifi;
 
                     // Replace
-                    itr.get().nodes->itr().get() = outer_node;
+                    node = outer_node;
                     return true;
                 }
             } else if ( auto uni_op = UniOp( node ) ) {
