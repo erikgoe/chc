@@ -125,7 +125,8 @@ using AstCont = EagerContainer<AstNode>;
 using AstItr = EagerContainer<AstNode>::Iterator;
 
 bool is_asnop_operator( const String &op ) {
-    return op.substr( op.size() - 1 ) == "=" && op != "==" && op != "!=";
+    return op.substr( op.size() - 1 ) == "=" && op != "==" && op != "!=" &&
+           op != "<=" && op != ">=";
 }
 
 bool is_expr( const AstNode &node ) {
@@ -732,87 +733,14 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 if ( itr.match( ast_tok( TT::Keyword, "for" ),
                                 ast( AT::Paren ) ) &&
                      paren.nodes->length() <= 4 && is_stmt( block ) ) {
-                    auto pb = paren.nodes->itr(); // paren body
-                    auto &pb0 = pb.get();
-                    auto &pb1 =
-                        pb.skip( 1 ).get_or( none ); // Always the inner expr
-                    auto &pb2 = pb.skip( 2 ).get_or( none );
-                    bool valid = false;
-                    if ( is_expr( pb1 ) && pb2.type == AT::Token &&
-                         pb2.tok->content == ";" ) {
-                        pb.skip( 2 ).erase_self(); // Erase semicolon, nos pb2
-                                                   // is 3rd param
-                        if ( pb.match( ast( AT::Stmt ) ) &&
-                             is_stmt_body( pb2 ) ) {
-                            // Is "for (<stmt>; <expr>; <stmt>) { ... }"
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
 
-                            // Wrap third parameter into statement
-                            auto third_param = ast( AT::Stmt );
-                            // Dummy container is needed here
-                            third_param.nodes = std::make_shared<AstCont>();
-                            third_param.nodes->put( pb2 );
-                            paren.nodes->put( third_param );
-                            pb.skip( 2 ).erase_self();
-
-                            valid = true;
-                        } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) &&
-                                    is_stmt_body( pb2 ) ) {
-                            // Is "for (; <expr>; <stmt>) { ... }"
-
-                            // First argument is equivalent to an empty block
-                            pb0 = ast( AT::Block );
-                            // Dummy container is needed here
-                            pb0.nodes = std::make_shared<AstCont>();
-
-                            // Wrap third parameter into statement
-                            auto third_param = ast( AT::Stmt );
-                            // Dummy container is needed here
-                            third_param.nodes = std::make_shared<AstCont>();
-                            third_param.nodes->put( pb2 );
-                            paren.nodes->put( third_param );
-                            pb.skip( 2 ).erase_self();
-
-                            valid = true;
-                        } else if ( pb.match( ast( AT::Stmt ) ) ) {
-                            // Is "for (<stmt>; <expr>;) { ... }"
-
-                            // Add a third parameter as empty block
-                            auto third_param = ast( AT::Block );
-                            // Dummy container is needed here
-                            third_param.nodes = std::make_shared<AstCont>();
-                            paren.nodes->put( third_param );
-
-                            valid = true;
-                        } else if ( pb.match( ast_tok( TT::Operator, ";" ) ) ) {
-                            // Is "for (; <expr>;) { ... }"
-
-                            // First argument is equivalent to an empty block
-                            pb0 = ast( AT::Block );
-                            // Dummy container is needed here
-                            pb0.nodes = std::make_shared<AstCont>();
-
-                            // Add a third parameter as empty block
-                            auto third_param = ast( AT::Block );
-                            // Dummy container is needed here
-                            third_param.nodes = std::make_shared<AstCont>();
-                            paren.nodes->put( third_param );
-
-                            valid = true;
-                        }
-                        auto step_type =
-                            paren.nodes->itr().skip( 2 ).get().type;
-                        if ( valid && step_type != AT::Decl &&
-                             step_type != AT::DeclUninit ) {
-                            // Remove two consumed elements.
-                            itr.erase_self();
-                            itr.erase_self();
-
-                            // Replace with merged token
-                            itr.get() = make_merged_node(
-                                AT::ForLoop, *for_kw.tok, { paren, block } );
-                            return true;
-                        }
-                    }
+                    // Replace with merged token
+                    itr.get() = make_merged_node( AT::ForLoop, *for_kw.tok,
+                                                  { paren, block } );
+                    return true;
                 }
             }
             return false;
@@ -862,6 +790,71 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
+    // Check parenthesis in for-loops
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( itr.get().type == AT::Paren && parent.type == AT::ForLoop ) {
+                auto nodes = itr.get().nodes->itr();
+
+                // Handle empty init
+                auto &init = nodes.get();
+                if ( nodes.match( ast_tok( TT::Operator, ";" ) ) ) {
+                    // Replace with empty block
+                    auto tmp_tok = init.tok;
+                    init = ast( AT::Block );
+                    init.tok = tmp_tok;
+                    init.ifi = init.tok->ifi;
+                    init.nodes = std::make_shared<AstCont>();
+                } else if ( !is_stmt( init ) ) {
+                    make_error_msg( state,
+                                    "Expected statement as init in for-loop.",
+                                    init.ifi, RetCode::SyntaxError );
+                    return false;
+                }
+
+                // Handle condition
+                auto cond = nodes.skip( 1 ).get();
+                if ( !is_expr( cond ) ) {
+                    make_error_msg(
+                        state, "Expected expression as condition in for-loop.",
+                        cond.ifi, RetCode::SyntaxError );
+                    return false;
+                }
+
+                // Erase second semicolon
+                auto semicolon_tok = nodes.skip( 2 ).get().tok;
+                nodes.skip( 2 ).erase_self();
+
+                // Handle empty step
+                if ( nodes.skip( 2 ).curr_not_valid() ) {
+                    // Add empty block
+                    auto step = ast( AT::Block );
+                    step.tok = semicolon_tok;
+                    step.ifi = step.tok->ifi;
+                    step.nodes = std::make_shared<AstCont>();
+                    itr.get().nodes->put( step );
+                }
+
+                // Check step conditions
+                auto &step = nodes.skip( 2 ).get();
+                if ( !is_stmt_body( step ) ) {
+                    make_error_msg( state,
+                                    "Expected statement as step in for-loop.",
+                                    step.ifi, RetCode::SyntaxError );
+                    return false;
+                }
+                if ( step.type == AT::Decl || step.type == AT::DeclUninit ) {
+                    make_error_msg( state,
+                                    "Declaration is not allowed as step "
+                                    "statement of for-loop head.",
+                                    step.ifi, RetCode::SyntaxError );
+                    return false;
+                }
+            }
+            return false;
+        } );
+
     // Check for Statements in blocks
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
@@ -905,7 +898,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         return {};
     }
 
-    // DEBUG
+// DEBUG
 #ifndef NDEBUG
     if ( true ) {
         full_graph.for_each( [&]( auto &&n ) { print_ast( n, "== AST ==" ); } );

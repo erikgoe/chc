@@ -41,7 +41,7 @@ struct AstNode {
     Opt<Token> tok; // Leaves
     Opt<SymbolId> symbol_id; // Only for respective nodes
 
-    InFileInfo ifi;
+    InFileInfo ifi; // TODO replace with function which returns tok.ifi.
 
     bool matching_valid = true;
     /// Returns whether the parameter matches this node (as pattern).
