@@ -96,7 +96,8 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
 
                     // Actually specification forbids this shadowing...
                     make_error_msg( state,
-                                    "Symbol already defined in other scope (shadowing forbidden).",
+                                    "Symbol already defined in other scope "
+                                    "(shadowing forbidden).",
                                     ifi, RetCode::SemanticError );
                     make_info_msg( state, "Previously defined here.",
                                    present_sym->second.ifi );
@@ -467,6 +468,7 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     struct PathState {
         EagerContainer<Mir::MirInstr>::Iterator pos;
         std::set<VarId> init_vars;
+        bool dead_path = false;
     };
 
     std::deque<PathState> to_check;
@@ -474,7 +476,7 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     to_check.push_back( PathState{ mir.instrs.itr() } );
 
     auto add_next_line = [&]( PathState path_next, InFileInfo ifi ) {
-        if ( path_next.pos.curr_not_valid() ) {
+        if ( path_next.pos.curr_not_valid() && !path_next.dead_path ) {
             make_error_msg( state, "Missing return statement.", ifi,
                             RetCode::SemanticError );
             return;
@@ -505,7 +507,8 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
     while ( !to_check.empty() ) {
         auto curr_path = to_check.front();
         to_check.pop_front();
-        if ( was_already_checked( curr_path ) )
+        if ( curr_path.pos.curr_not_valid() ||
+             was_already_checked( curr_path ) )
             continue;
         already_checked.push_back( curr_path );
         auto &instr = curr_path.pos.get();
@@ -518,7 +521,7 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
                             RetCode::SemanticError );
         }
         if ( instr.p1 != 0 && defs.find( instr.p1 ) == defs.end() ) {
-            // p0 not defined
+            // p1 not defined
             make_error_msg( state, "Using undefined variable", instr.ifi,
                             RetCode::SemanticError );
         }
@@ -535,9 +538,11 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
                            instr.ifi );
             add_next_line( PathState{ *mir.jump_table[instr.imm], defs },
                            instr.ifi );
-        } else if ( instr.type != MT::Ret ) {
-            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs },
-                           instr.ifi );
+        } else {
+            bool dead_path = curr_path.dead_path || instr.type == MT::Ret;
+            add_next_line(
+                PathState{ curr_path.pos.skip( 1 ), defs, dead_path },
+                instr.ifi );
         }
     }
 }
