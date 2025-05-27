@@ -417,9 +417,9 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::SetEq ) {
             put_asm( "sete %al" );
         } else if ( op.opcode == AOC::SetBelow ) {
-            put_asm( "setb %al" );
+            put_asm( "setl %al" );
         } else if ( op.opcode == AOC::SetBelowEq ) {
-            put_asm( "setbe %al" );
+            put_asm( "setle %al" );
         } else if ( op.opcode == AOC::Jmp ) {
             put_asm( "jmp " + op.str );
         } else if ( op.opcode == AOC::Jz ) {
