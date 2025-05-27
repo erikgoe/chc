@@ -514,7 +514,8 @@ void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
     } );
 
     // Check for missing return statement
-    if ( !instr_had_return.empty() && !instr_had_return.back().value() ) {
+    if ( !instr_had_return.empty() && ( !instr_had_return.back().has_value() ||
+                                        !instr_had_return.back().value() ) ) {
         make_error_msg( state, "Found path without return statement",
                         InFileInfo{}, RetCode::SemanticError );
     }
