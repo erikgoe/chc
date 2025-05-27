@@ -654,7 +654,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
                 // Check step conditions
                 auto &step = nodes.skip( 2 ).get();
-                if ( !is_stmt_body( step ) && step.type != AT::Block ) {
+                if ( !is_stmt_body( step ) &&
+                     ( step.type != AT::Block || !step.nodes->empty() ) ) {
                     make_error_msg( state,
                                     "Expected statement as step in for-loop.",
                                     step.ifi, RetCode::SyntaxError );
@@ -664,7 +665,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     make_error_msg( state,
                                     "Declaration is not allowed as step "
                                     "statement of for-loop head.",
-                                    step.ifi, RetCode::SyntaxError );
+                                    step.ifi, RetCode::SemanticError );
                     return false;
                 }
             }
