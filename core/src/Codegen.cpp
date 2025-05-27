@@ -158,6 +158,11 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     // Write back to stack if necessary
     auto writeback_opt = [&]( VarId to_var, HwReg src_reg,
                               const InFileInfo &ifi ) {
+        if ( to_var == 0 ) {
+            // Empty dest register, means that we are not interested in the
+            // result, but in the effect.
+            return;
+        }
         RegId reg = mir.reg_mapping[to_var];
         if ( reg < virtual_stack_start_reg ) {
             if ( to_hw_reg( reg ) != src_reg ) {

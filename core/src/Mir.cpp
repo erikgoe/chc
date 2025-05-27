@@ -384,17 +384,21 @@ void trim_dead_code( CompilerState &state, Mir &mir ) {
         itr.skip_self( -1 );
         auto &instr = itr.get();
         auto succ = get_successors( mir, itr, none );
-        if ( !has_effect( mir, instr ) &&
-             succ.first->needed.find( instr.result ) ==
+        if ( succ.first->needed.find( instr.result ) ==
                  succ.first->needed.end() &&
              succ.second->needed.find( instr.result ) ==
                  succ.second->needed.end() ) {
-            // Result is not needed and therefore this line is dead code.
-            to_erase.push_back( itr );
+            if ( !has_effect( mir, instr ) ) {
+                // Result is not needed and therefore this line is dead code.
+                to_erase.push_back( itr );
+            } else {
+                // Not needed, but has an effect => don't write back result
+                itr.get().result = 0;
+            }
         }
     }
 
-    // Now delete dead code
+    // Now delete dead code (to_erase lists iterators from back to front).
     for ( auto itr : to_erase ) {
         itr.erase_self();
     }
