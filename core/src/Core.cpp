@@ -32,7 +32,8 @@ void Core::compile() {
                 return;
 
             auto mir = construct_mir( state, root );
-            use_before_init_check( state, mir );
+            use_before_init_and_return_check( state, mir );
+            drop_uninit_instrs( state, mir );
             if ( !state.success )
                 return;
             type_checking( state, mir );

@@ -228,23 +228,6 @@ void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
                 return false;
             } );
     }
-
-    // Check if return statement exists
-    if ( state.success ) {
-        bool found_return = false;
-        apply_pass_recursively_from_left(
-            state, *root_node.nodes, root_node,
-            [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-                auto node = itr.get();
-                if ( node.type == AT::Ret )
-                    found_return = true;
-                return false;
-            } );
-        if ( !found_return ) {
-            make_error_msg( state, "No return statement found.", InFileInfo{},
-                            RetCode::SemanticError );
-        }
-    }
 }
 
 void print_ast( const AstNode &root, const String &title );
@@ -464,87 +447,86 @@ using MI = Mir::MirInstr;
 using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 
-void use_before_init_check( CompilerState &state, Mir &mir ) {
-    struct PathState {
-        EagerContainer<Mir::MirInstr>::Iterator pos;
-        std::set<VarId> init_vars;
-        bool dead_path = false;
-    };
-
-    std::deque<PathState> to_check;
-    std::vector<PathState> already_checked;
-    to_check.push_back( PathState{ mir.instrs.itr() } );
-
-    auto add_next_line = [&]( PathState path_next, InFileInfo ifi ) {
-        if ( path_next.pos.curr_not_valid() && !path_next.dead_path ) {
-            make_error_msg( state, "Missing return statement.", ifi,
-                            RetCode::SemanticError );
-            return;
-        }
-        to_check.push_back( path_next );
-    };
-    auto is_subset = []( const std::set<VarId> &super,
-                         const std::set<VarId> &sub ) {
-        for ( auto &s : sub ) {
-            if ( std::find( super.begin(), super.end(), s ) == super.end() )
-                return false; // Not found => not a subset
-        }
-        return true;
-    };
-    auto was_already_checked = [&]( PathState &path ) {
-        return std::find_if( already_checked.begin(), already_checked.end(),
-                             [&]( const PathState &pa ) {
-                                 // If the vars of the already checked path is a
-                                 // subset of vars of the new path, then the new
-                                 // path will not find new undefined variables.
-                                 return path.pos == pa.pos &&
-                                        is_subset( path.init_vars,
-                                                   pa.init_vars );
-                             } ) != already_checked.end();
-    };
+void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
+    std::vector<std::vector<VarId>> instr_uninits; // For each instr
+    instr_uninits.resize( mir.instrs.length() + 1 );
+    std::vector<Opt<bool>> instr_had_return; // For each instr
+    instr_had_return.resize( mir.instrs.length() + 1 );
 
     // Check only reachable code
-    while ( !to_check.empty() ) {
-        auto curr_path = to_check.front();
-        to_check.pop_front();
-        if ( curr_path.pos.curr_not_valid() ||
-             was_already_checked( curr_path ) )
-            continue;
-        already_checked.push_back( curr_path );
-        auto &instr = curr_path.pos.get();
-        auto &defs = curr_path.init_vars;
+    size_t i = 0;
+    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
+        std::vector<VarId> uninits = instr_uninits[i];
 
         // Check variable usage
-        if ( instr.p0 != 0 && defs.find( instr.p0 ) == defs.end() ) {
+        if ( instr.p0 != 0 && std::find( uninits.begin(), uninits.end(),
+                                         instr.p0 ) != uninits.end() ) {
             // p0 not defined
             make_error_msg( state, "Using undefined variable", instr.ifi,
                             RetCode::SemanticError );
         }
-        if ( instr.p1 != 0 && defs.find( instr.p1 ) == defs.end() ) {
+        if ( instr.p1 != 0 && std::find( uninits.begin(), uninits.end(),
+                                         instr.p1 ) != uninits.end() ) {
             // p1 not defined
             make_error_msg( state, "Using undefined variable", instr.ifi,
                             RetCode::SemanticError );
         }
-        if ( instr.result != 0 ) {
-            defs.insert( instr.result );
+
+        if ( instr.type == MT::Uninit ) {
+            // Memorize uninitialized variables
+            uninits.push_back( instr.result );
+        } else if ( instr.type == MT::Ret ) {
+            // Some random specification rule, defines that this "defines" all
+            // undefined variables ...
+            uninits.clear();
+        } else if ( instr.result != 0 ) {
+            // Is defined
+            uninits.erase(
+                std::remove_if( uninits.begin(), uninits.end(),
+                                [&]( auto &&u ) { return u == instr.result; } ),
+                uninits.end() );
         }
 
+        // Return statement
+        instr_had_return[i] =
+            instr_had_return[i].value_or( false ) || instr.type == MT::Ret;
+
         // Add successors
-        if ( instr.type == MT::Jmp ) {
-            add_next_line( PathState{ *mir.jump_table[instr.imm], defs, curr_path.dead_path },
-                           instr.ifi );
-        } else if ( instr.type == MT::JZero ) {
-            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs, curr_path.dead_path },
-                           instr.ifi );
-            add_next_line( PathState{ *mir.jump_table[instr.imm], defs, curr_path.dead_path },
-                           instr.ifi );
-        } else {
-            bool dead_path = curr_path.dead_path || instr.type == MT::Ret;
-            add_next_line(
-                PathState{ curr_path.pos.skip( 1 ), defs, dead_path },
-                instr.ifi );
+        if ( instr.type != MT::Jmp ) {
+            // Next instr is reached
+            instr_uninits[i + 1].insert( instr_uninits[i + 1].end(),
+                                         uninits.begin(), uninits.end() );
+            instr_had_return[i + 1] =
+                instr_had_return[i + 1].value_or( true ) &&
+                instr_had_return[i].value();
         }
+        if ( instr.type == MT::Jmp || instr.type == MT::JZero ) {
+            // Next specified by imm
+            ssize_t next_idx = *mir.jump_table[instr.imm] - mir.instrs.begin();
+            instr_uninits[next_idx].insert( instr_uninits[next_idx].end(),
+                                            uninits.begin(), uninits.end() );
+            instr_had_return[next_idx] =
+                instr_had_return[next_idx].value_or( true ) &&
+                instr_had_return[i].value();
+        }
+
+        i++;
+    } );
+
+    // Check for missing return statement
+    if ( !instr_had_return.empty() && !instr_had_return.back().value() ) {
+        make_error_msg( state, "Found path without return statement",
+                        InFileInfo{}, RetCode::SemanticError );
     }
+}
+
+void drop_uninit_instrs( CompilerState &state, Mir &mir ) {
+    mir.instrs.for_each( [&]( Mir::MirInstr &instr ) {
+        if ( instr.type == MT::Uninit ) {
+            instr.type = MT::Nop;
+            instr.result = 0;
+        }
+    } );
 }
 
 void type_checking( CompilerState &state, Mir &mir ) {

@@ -23,6 +23,7 @@ struct Mir {
             Ret,
             Jmp,
             JZero,
+            Uninit,
 
             count
         } type = Type::None;

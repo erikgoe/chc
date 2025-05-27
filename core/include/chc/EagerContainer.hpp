@@ -156,6 +156,10 @@ public:
         bool operator<( const Iterator other ) const {
             return cont == other.cont && idx < other.idx;
         }
+        ssize_t operator-( const Iterator other ) const {
+            assert( cont == other.cont );
+            return idx - other.idx;
+        }
     };
     friend class Iterator;
 
@@ -214,6 +218,12 @@ public:
 
     /// Evaluation of all elements using \param func.
     void for_each( std::function<void( const T & )> func ) const {
+        for ( size_t i = 0; i < data.size(); i++ )
+            func( data[i] );
+    }
+
+    /// Evaluation of all elements using \param func.
+    void for_each( std::function<void( T & )> func ) {
         for ( size_t i = 0; i < data.size(); i++ )
             func( data[i] );
     }

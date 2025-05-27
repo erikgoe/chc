@@ -148,6 +148,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
+        mir.instrs.put( MI{ MT::Uninit, variable, 0, 0, 0, node.ifi } );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id->value()];
         mir.instrs.put( MI{ MT::Mov, into_var, variable, 0, 0, node.ifi } );
