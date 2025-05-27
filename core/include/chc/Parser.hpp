@@ -118,6 +118,10 @@ inline bool has_only_int_params( ArithType t ) {
     case ArithType::Div:
     case ArithType::Mod:
     case ArithType::Neg:
+    case ArithType::BInv:
+    case ArithType::BAnd:
+    case ArithType::BOr:
+    case ArithType::BXor:
     case ArithType::Shl:
     case ArithType::Shr:
     case ArithType::Less:
@@ -153,6 +157,10 @@ inline bool has_only_int_ret( ArithType t ) {
     case ArithType::Div:
     case ArithType::Mod:
     case ArithType::Neg:
+    case ArithType::BInv:
+    case ArithType::BAnd:
+    case ArithType::BOr:
+    case ArithType::BXor:
     case ArithType::Shl:
     case ArithType::Shr:
         return true;
@@ -165,10 +173,6 @@ inline bool has_any_type_ret( ArithType t ) {
     case ArithType::None:
     case ArithType::Eq:
     case ArithType::UnEq:
-    case ArithType::BInv:
-    case ArithType::BAnd:
-    case ArithType::BOr:
-    case ArithType::BXor:
         return true;
     default:
         return false;
