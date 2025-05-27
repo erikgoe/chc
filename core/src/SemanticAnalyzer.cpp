@@ -531,12 +531,12 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
 
         // Add successors
         if ( instr.type == MT::Jmp ) {
-            add_next_line( PathState{ *mir.jump_table[instr.imm], defs },
+            add_next_line( PathState{ *mir.jump_table[instr.imm], defs, curr_path.dead_path },
                            instr.ifi );
         } else if ( instr.type == MT::JZero ) {
-            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs },
+            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs, curr_path.dead_path },
                            instr.ifi );
-            add_next_line( PathState{ *mir.jump_table[instr.imm], defs },
+            add_next_line( PathState{ *mir.jump_table[instr.imm], defs, curr_path.dead_path },
                            instr.ifi );
         } else {
             bool dead_path = curr_path.dead_path || instr.type == MT::Ret;
