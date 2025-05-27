@@ -457,41 +457,54 @@ using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 
 void use_before_init_check( CompilerState &state, Mir &mir ) {
-    std::deque<EagerContainer<Mir::MirInstr>::Iterator> to_check;
-    std::set<EagerContainer<Mir::MirInstr>::Iterator> already_checked;
-    std::set<VarId> defs;
-    to_check.push_back( mir.instrs.itr() );
+    struct PathState {
+        EagerContainer<Mir::MirInstr>::Iterator pos;
+        std::set<VarId> init_vars;
+    };
 
-    auto add_next_line = [&]( EagerContainer<Mir::MirInstr>::Iterator itr,
-                              InFileInfo ifi ) {
-        if ( itr.curr_not_valid() ) {
+    std::deque<PathState> to_check;
+    std::vector<PathState> already_checked;
+    to_check.push_back( PathState{ mir.instrs.itr() } );
+
+    auto add_next_line = [&]( PathState path_next, InFileInfo ifi ) {
+        if ( path_next.pos.curr_not_valid() ) {
             make_error_msg( state, "Missing return statement.", ifi,
                             RetCode::SemanticError );
             return;
         }
-        to_check.push_back( itr );
+        to_check.push_back( path_next );
+    };
+    auto is_subset = []( const std::set<VarId> &super,
+                         const std::set<VarId> &sub ) {
+        for ( auto &s : sub ) {
+            if ( std::find( super.begin(), super.end(), s ) == super.end() )
+                return false; // Not found => not a subset
+        }
+        return true;
+    };
+    auto was_already_checked = [&]( PathState &path ) {
+        return std::find_if( already_checked.begin(), already_checked.end(),
+                             [&]( const PathState &pa ) {
+                                 // If the vars of the already checked path is a
+                                 // subset of vars of the new path, then the new
+                                 // path will not find new undefined variables.
+                                 return path.pos == pa.pos &&
+                                        is_subset( path.init_vars,
+                                                   pa.init_vars );
+                             } ) != already_checked.end();
     };
 
     // Check only reachable code
     while ( !to_check.empty() ) {
-        auto instr_itr = to_check.front();
+        auto curr_path = to_check.front();
         to_check.pop_front();
-        if ( already_checked.find( instr_itr ) != already_checked.end() )
+        if ( was_already_checked( curr_path ) )
             continue;
-        already_checked.insert( instr_itr );
-
-        // Add successors
-        if ( instr_itr.get().type == MT::Jmp ) {
-            to_check.push_back( *mir.jump_table[instr_itr.get().imm] );
-        } else if ( instr_itr.get().type == MT::JZero ) {
-            add_next_line( instr_itr.skip( 1 ), instr_itr.get().ifi );
-            to_check.push_back( *mir.jump_table[instr_itr.get().imm] );
-        } else if ( instr_itr.get().type != MT::Ret ) {
-            add_next_line( instr_itr.skip( 1 ), instr_itr.get().ifi );
-        }
+        already_checked.push_back( curr_path );
+        auto &instr = curr_path.pos.get();
+        auto &defs = curr_path.init_vars;
 
         // Check variable usage
-        auto &instr = instr_itr.get();
         if ( instr.p0 != 0 && defs.find( instr.p0 ) == defs.end() ) {
             // p0 not defined
             make_error_msg( state, "Using undefined variable", instr.ifi,
@@ -504,6 +517,20 @@ void use_before_init_check( CompilerState &state, Mir &mir ) {
         }
         if ( instr.result != 0 ) {
             defs.insert( instr.result );
+        }
+
+        // Add successors
+        if ( instr.type == MT::Jmp ) {
+            add_next_line( PathState{ *mir.jump_table[instr.imm], defs },
+                           instr.ifi );
+        } else if ( instr.type == MT::JZero ) {
+            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs },
+                           instr.ifi );
+            add_next_line( PathState{ *mir.jump_table[instr.imm], defs },
+                           instr.ifi );
+        } else if ( instr.type != MT::Ret ) {
+            add_next_line( PathState{ curr_path.pos.skip( 1 ), defs },
+                           instr.ifi );
         }
     }
 }
