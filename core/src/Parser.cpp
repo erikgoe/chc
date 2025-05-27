@@ -326,225 +326,41 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // TODO Create a generic function for binops
-
-    // "*", "/", "%" operators
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "*" ) ) ||
-                     op.match( ast_tok( TT::Operator, "/" ) ) ||
-                     op.match( ast_tok( TT::Operator, "%" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
+    // Generic parsing function for binary operators
+    auto bin_op_parsing = [&]( const std::vector<String> &ops ) {
+        apply_pass_recursively_from_left(
+            state, *root_node.nodes, root_node,
+            [ops]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+                auto lhs = itr.get();
+                auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
+                auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+                if ( is_expr( lhs ) && is_expr( rhs ) ) {
+                    for ( auto &o : ops ) {
+                        if ( op.match( ast_tok( TT::Operator, o ) ) ) {
+                            // Remove two consumed elements.
+                            itr.erase_self();
+                            itr.erase_self();
+                            // Replace with merged token
+                            itr.get() = make_merged_node( AT::BinOp, *op.tok,
+                                                          { lhs, rhs } );
+                            return true;
+                        }
+                    }
                 }
-            }
-            return false;
-        } );
+                return false;
+            } );
+    };
 
-    // "+", "-" operators
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "+" ) ) ||
-                     op.match( ast_tok( TT::Operator, "-" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "<<", ">>" operators
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "<<" ) ) ||
-                     op.match( ast_tok( TT::Operator, ">>" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "<", ">", "<=", ">=" operators
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "<" ) ) ||
-                     op.match( ast_tok( TT::Operator, ">" ) ) ||
-                     op.match( ast_tok( TT::Operator, "<=" ) ) ||
-                     op.match( ast_tok( TT::Operator, ">=" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "==", "!=" operators
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "==" ) ) ||
-                     op.match( ast_tok( TT::Operator, "!=" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "&" operator
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "&" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "^" operator
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "^" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "|" operator
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "|" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "&&" operator
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "&&" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
-
-    // "||" operator
-    apply_pass_recursively_from_left(
-        state, *root_node.nodes, root_node,
-        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            auto lhs = itr.get();
-            auto op = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( is_expr( lhs ) && is_expr( rhs ) ) {
-                if ( op.match( ast_tok( TT::Operator, "||" ) ) ) {
-                    // Remove two consumed elements.
-                    itr.erase_self();
-                    itr.erase_self();
-                    // Replace with merged token
-                    itr.get() =
-                        make_merged_node( AT::BinOp, *op.tok, { lhs, rhs } );
-                    return true;
-                }
-            }
-            return false;
-        } );
+    bin_op_parsing( { "*", "/", "%" } );
+    bin_op_parsing( { "+", "-" } );
+    bin_op_parsing( { "<<", ">>" } );
+    bin_op_parsing( { "<", ">", "<=", ">=" } );
+    bin_op_parsing( { "==", "!=" } );
+    bin_op_parsing( { "&" } );
+    bin_op_parsing( { "^" } );
+    bin_op_parsing( { "|" } );
+    bin_op_parsing( { "&&" } );
+    bin_op_parsing( { "||" } );
 
     // "? :" operator
     apply_pass_recursively_from_right(
