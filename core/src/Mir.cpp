@@ -244,6 +244,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto for_loop = ForLoop( node ) ) {
         i32 loop_lbl = mir.next_label++;
         i32 skip_lbl = mir.next_label++;
+        i32 continue_lbl = mir.next_label++;
         VarId cond = mir.next_var++;
         mir.type_of( cond ) = Mir::TYPE_BOOL;
         write_mir_instr( state, mir, *for_loop.init, mir.next_var++ );
@@ -251,11 +252,13 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, loop_lbl, node.ifi } );
         write_mir_instr( state, mir, *for_loop.cond, cond );
         mir.instrs.put( MI{ MT::JZero, 0, cond, 0, skip_lbl, node.ifi } );
-        mir.continue_stack.push_back( loop_lbl );
+        mir.continue_stack.push_back( continue_lbl );
         mir.break_stack.push_back( skip_lbl );
         write_mir_instr( state, mir, *for_loop.body, mir.next_var++ );
         mir.break_stack.pop_back();
         mir.continue_stack.pop_back();
+        add_jump_label_target( mir, continue_lbl, mir.instrs.end() );
+        mir.instrs.put( MI{ MT::Label, 0, 0, 0, continue_lbl, node.ifi } );
         write_mir_instr( state, mir, *for_loop.step, mir.next_var++ );
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
