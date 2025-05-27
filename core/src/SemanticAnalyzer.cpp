@@ -93,6 +93,13 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
                     // symbol
                     ps.symbols.push_back( *present_sym );
                     symbol_map[symbol] = SymbolDecl{ next_symbol++, ifi };
+
+                    // Actually specification forbids this shadowing...
+                    make_error_msg( state,
+                                    "Symbol already defined in other scope (shadowing forbidden).",
+                                    ifi, RetCode::SemanticError );
+                    make_info_msg( state, "Previously defined here.",
+                                   present_sym->second.ifi );
                 }
             } else {
                 // New symbol
