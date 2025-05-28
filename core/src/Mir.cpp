@@ -82,6 +82,49 @@ Mir::TypeId str_to_type( CompilerState &state, const String &str,
     }
 }
 
+// Sift down used for std::make_heap heaps (as standard library does not provide
+// this function). TODO not needed?
+template <typename T>
+void sift_down( std::vector<T> &heap, size_t idx,
+                std::function<bool( const T &, const T & )> cmp ) {
+    while ( idx * 2 + 1 < heap.size() ) {
+        size_t lhs_child = idx * 2 + 1;
+        size_t rhs_child = idx * 2 + 2;
+        size_t curr_max = idx;
+
+        if ( lhs_child < heap.size() &&
+             cmp( heap[curr_max], heap[lhs_child] ) ) {
+            curr_max = lhs_child;
+        }
+        if ( rhs_child < heap.size() &&
+             cmp( heap[curr_max], heap[rhs_child] ) ) {
+            curr_max = rhs_child;
+        }
+        if ( curr_max != idx ) {
+            std::swap( heap[idx], heap[curr_max] );
+            idx = curr_max;
+        } else {
+            break;
+        }
+    }
+}
+
+// Sift up used for std::make_heap heaps (as standard library does not provide
+// this function).
+template <typename T, typename Comp>
+void sift_up( std::vector<T> &heap, size_t offset, size_t idx, Comp cmp ) {
+    while ( idx > 0 ) {
+        size_t parent = ( idx - 1 ) / 2;
+
+        if ( cmp( heap[offset + parent], heap[offset + idx] ) ) {
+            std::swap( heap[offset + parent], heap[offset + idx] );
+            idx = parent;
+        } else {
+            break;
+        }
+    }
+}
+
 void add_jump_label_target(
     Mir &mir, i32 label_id,
     EagerContainer<Mir::MirInstr>::Iterator instr_itr ) {
@@ -423,26 +466,35 @@ void create_inference_graph( CompilerState &state, Mir &mir,
 void create_simplicial_elimination_ordering(
     CompilerState &state, Mir &mir, const InferenceGraph &inference_graph,
     std::vector<VarId> &ordering ) {
-    std::map<VarId, size_t> wv; // Weighted vertices TODO use make_heap
+    ordering.reserve( mir.next_var );
+    std::vector<std::pair<VarId, size_t>> wv; // Weighted vertices
+    std::vector<bool> scheduled_vars; // For faster lookup
+    scheduled_vars.resize( mir.next_var );
+    wv.resize( mir.next_var );
     for ( size_t i = 0; i < mir.next_var; i++ )
-        wv[i] = 0; // Populate wv
-    ordering.reserve( wv.size() );
+        wv[i] = std::make_pair( i, 0 ); // Populate wv
+    size_t consumed = 0;
+
+    auto cmp = []( auto &&a, auto &&b ) { return a.second <= b.second; };
 
     // Construct ordering
-    while ( !wv.empty() ) {
-        auto max_v_itr = std::max_element(
-            wv.begin(), wv.end(),
-            []( auto &&a, auto &&b ) { return a.second < b.second; } );
-        ordering.push_back( max_v_itr->first );
+    while ( wv.size() - consumed > 0 ) {
+        auto max_v = *( wv.begin() + consumed );
+        consumed++;
+        ordering.push_back( max_v.first );
+        scheduled_vars[max_v.first] = true;
 
         // Increment weight of remaining neighbors (if there are any)
-        inference_graph.for_all_neighbors(
-            max_v_itr->first, [&]( VarId neighbor ) {
-                if ( wv.find( neighbor ) != wv.end() )
-                    ++wv[neighbor];
-            } );
-
-        wv.erase( max_v_itr );
+        inference_graph.for_all_neighbors( max_v.first, [&]( VarId neighbor ) {
+            if ( !scheduled_vars[neighbor] ) {
+                // Still to schedule => increase weight
+                auto itr = std::find_if(
+                    wv.begin() + consumed, wv.end(),
+                    [=]( auto &&p ) { return p.first == neighbor; } );
+                ++itr->second;
+                sift_up( wv, consumed, itr - wv.begin() - consumed, cmp );
+            }
+        } );
     }
 }
 
