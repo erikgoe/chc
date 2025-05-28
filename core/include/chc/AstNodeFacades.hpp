@@ -263,7 +263,6 @@ public:
         matches = to_wrap.type == AstNode::Type::AsnOp;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            // TODO check that parenthesis has only one subnode
             lvalue = &unwrap_paren( itr.get() );
             value = &itr.skip( 1 ).get();
             auto &type_str = to_wrap.tok->content;

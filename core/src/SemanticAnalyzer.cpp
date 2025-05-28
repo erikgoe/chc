@@ -237,8 +237,6 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
         state, *root_node.nodes, root_node,
         [&]( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto &node = itr.get();
-            // TODO check if future specifications also only allow asnop as
-            // statement and not as expression (which would not match here).
             if ( auto asnop = AsnOp( node );
                  asnop && parent.type != AT::Decl ) {
                 // Translate combined asnop into explicit operation.
