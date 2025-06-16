@@ -29,7 +29,7 @@ bool is_ident_token( const String &s ) {
 bool is_operator_token( const String &s ) {
     if ( s.size() != 1 )
         return false;
-    return String( "+-*/%=(){};!~&|^<>?:" ).find( s.front() ) != String::npos;
+    return String( "+-*/%=(){};!~&|^<>?:," ).find( s.front() ) != String::npos;
 }
 bool is_merged_operator( const String &s ) {
     return s == "&&" || s == "||" || s == "==" || s == "!=" || s == "<=" ||
@@ -90,7 +90,6 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
             txt_clean_newlines.put( fc );
         }
     }
-
 
     // Handle comments and strings
     EagerContainer<Token> txt_with_strings;
@@ -275,11 +274,12 @@ EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {
     }
 
     // Detect keywords
-    std::set<String> keywords = {
-        "struct", "if",          "else", "while", "for",  "continue", "break",
-        "return", "assert",      "true", "false", "NULL", "print",    "read",
-        "alloc",  "alloc_array", "int",  "bool",  "void", "char",     "string"
-    };
+    std::set<String> keywords = { "struct",      "if",       "else",  "while",
+                                  "for",         "continue", "break", "return",
+                                  "assert",      "true",     "false", "NULL",
+                                  "print",       "read",     "flush", "alloc",
+                                  "alloc_array", "int",      "bool",  "void",
+                                  "char",        "string" };
     EagerContainer<Token> txt_with_kw =
         txt_tokenized.map<Token>( [keywords]( const Token &tok ) {
             auto ret = tok;
