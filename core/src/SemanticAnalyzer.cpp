@@ -192,9 +192,20 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             pop_var_stack();
             pop_var_stack();
         } else if ( auto fn_def = FunctionDef( node ) ) {
+            push_var_stack();
+
+            // Function parameters
+            auto param_itr = fn_def.params->itr();
+            while ( param_itr ) {
+                analyze_block( param_itr.get() );
+                param_itr.skip_self( 1 );
+            }
+
+            // Body
             analyze_block( node.nodes->itr().skip( 2 ).get() );
             SymbolId new_id = match_new_symbol( fn_def.fn_symbol, node.ifi );
             *fn_def.fn_symbol_id = new_id;
+            pop_var_stack();
         } else {
             // Normal nodes
             // Simply recurse into subnodes

@@ -120,7 +120,12 @@ public:
             type = itr.get().tok->content;
             fn_symbol = decl_itr.get().tok->content;
             fn_symbol_id = &decl_itr.get().symbol_id;
-            params = &*itr.skip( 1 ).get().nodes;
+            if ( itr.skip( 1 ).get().nodes->length() <= 1 ) {
+                params = &*itr.skip( 1 ).get().nodes;
+            } else {
+                // Pass elements of the CommaList
+                params = &*itr.skip( 1 ).get().nodes->itr().get().nodes;
+            }
             stmts = &*itr.skip( 2 ).get().nodes;
         }
     }
