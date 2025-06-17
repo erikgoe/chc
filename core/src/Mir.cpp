@@ -141,7 +141,7 @@ SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
     } else {
         make_error_msg(
             state,
-            "LValue is of unknow type. This is probably in compiler bug.",
+            "LValue is of unknown type. This is probably in compiler bug.",
             n.ifi, RetCode::InternalError );
         return 0;
     }

@@ -65,16 +65,60 @@ Opt<String> find_similar_symbol(
     return best_match.empty() ? Opt<String>{} : best_match;
 }
 
+void global_symbol_analysis( CompilerState &state, AstNode &root_node,
+                             std::unordered_map<String, SymbolDecl> &func_map,
+                             SymbolId &next_symbol ) {
+    std::function<void( AstNode & )> analyze_node;
+    analyze_node = [&]( AstNode &node ) {
+        // Check node
+        if ( auto def = FunctionDef( node ) ) {
+            // Function definition implies declaration
+
+            // Search for existing symbol
+            auto present_sym = func_map.find( def.fn_symbol );
+            if ( present_sym != func_map.end() ) {
+                // Already declared in global scope
+                make_error_msg( state,
+                                "Symbol already defined in global scope.",
+                                node.ifi, RetCode::SemanticError );
+                make_info_msg( state, "Previously defined here.",
+                               present_sym->second.ifi );
+            } else {
+                // New symbol
+                func_map[def.fn_symbol] = SymbolDecl{ next_symbol++, node.ifi };
+            }
+            *def.fn_symbol_id =
+                next_symbol - 1; // Set the new symbol's id (if any)
+        } else if ( node.type == AT::GlobalScope ) {
+            // Recurse global scope
+            if ( node.nodes ) {
+                auto itr = node.nodes->itr();
+                while ( itr ) {
+                    analyze_node( itr.get() );
+                    itr.skip_self( 1 );
+                }
+            }
+        }
+    };
+
+    // Iterate root node
+    analyze_node( root_node );
+}
 
 void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
     std::unordered_map<String, SymbolDecl> symbol_map;
+    std::unordered_map<String, SymbolDecl> func_map;
     SymbolId next_symbol = 1;
     std::deque<SymbolStackEntry> prev_stack;
     prev_stack.push_back( SymbolStackEntry{ next_symbol } );
 
+    // First analyze global scope
+    // TODO use struct for common analysis variables
+    global_symbol_analysis( state, root_node, func_map, next_symbol );
+
     // Analyze all blocks
-    std::function<void( AstNode & )> analyze_block;
-    analyze_block = [&]( AstNode &node ) {
+    std::function<void( AstNode & )> analyze_node;
+    analyze_node = [&]( AstNode &node ) {
         auto &ps = prev_stack.back();
 
         // Utility functions
@@ -82,7 +126,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             auto present_sym = symbol_map.find( symbol );
             if ( present_sym != symbol_map.end() ) {
                 if ( present_sym->second.id >= ps.first_symbol ) {
-                    // Already declared in this scop
+                    // Already declared in this scope
                     make_error_msg( state,
                                     "Symbol already defined in this scope.",
                                     ifi, RetCode::SemanticError );
@@ -125,7 +169,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
         // Check node
         if ( auto decl = Decl( node ) ) {
             // Normal variable declaration
-            analyze_block( *decl.init );
+            analyze_node( *decl.init );
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
             *decl.symbol_id = new_id;
         } else if ( auto decl = DeclUninit( node ) ) {
@@ -135,7 +179,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
         } else if ( auto ident = Ident( node ) ) {
             if ( !*ident.id ) {
                 if ( symbol_map.find( ident.symbol ) != symbol_map.end() ) {
-                    node.symbol_id = symbol_map[ident.symbol].id;
+                    *ident.id = symbol_map[ident.symbol].id;
                 } else {
                     // Unknown symbol
                     make_error_msg( state, "Undefined identifier", node.ifi,
@@ -155,40 +199,40 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
 
             auto itr = block.children->itr();
             while ( itr ) {
-                analyze_block( itr.get() );
+                analyze_node( itr.get() );
                 itr.skip_self( 1 );
             }
 
             pop_var_stack();
         } else if ( auto if_stmt = IfStmt( node ) ) {
             // New scope in true_stmt
-            analyze_block( *if_stmt.cond );
+            analyze_node( *if_stmt.cond );
             push_var_stack();
-            analyze_block( if_stmt.true_stmt );
+            analyze_node( if_stmt.true_stmt );
             if_stmt.write_back_true_stmt( node );
             pop_var_stack();
 
             // Optionally the same for the false_statement
             if ( if_stmt.false_stmt.type != AT::None ) {
                 push_var_stack();
-                analyze_block( if_stmt.false_stmt );
+                analyze_node( if_stmt.false_stmt );
                 if_stmt.write_back_false_stmt( node );
                 pop_var_stack();
             }
         } else if ( auto while_loop = WhileLoop( node ) ) {
             // New scope in while body
-            analyze_block( *while_loop.cond );
+            analyze_node( *while_loop.cond );
             push_var_stack();
-            analyze_block( *while_loop.body );
+            analyze_node( *while_loop.body );
             pop_var_stack();
         } else if ( auto for_loop = ForLoop( node ) ) {
             // For loops actually have two scopes
             push_var_stack();
-            analyze_block( *for_loop.init );
+            analyze_node( *for_loop.init );
             push_var_stack();
-            analyze_block( *for_loop.cond );
-            analyze_block( *for_loop.body );
-            analyze_block( *for_loop.step );
+            analyze_node( *for_loop.cond );
+            analyze_node( *for_loop.body );
+            analyze_node( *for_loop.step );
             pop_var_stack();
             pop_var_stack();
         } else if ( auto fn_def = FunctionDef( node ) ) {
@@ -197,22 +241,45 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
             // Function parameters
             auto param_itr = fn_def.params->itr();
             while ( param_itr ) {
-                analyze_block( param_itr.get() );
+                analyze_node( param_itr.get() );
                 param_itr.skip_self( 1 );
             }
 
             // Body
-            analyze_block( node.nodes->itr().skip( 2 ).get() );
-            SymbolId new_id = match_new_symbol( fn_def.fn_symbol, node.ifi );
-            *fn_def.fn_symbol_id = new_id;
+            analyze_node( node.nodes->itr().skip( 2 ).get() );
             pop_var_stack();
+        } else if ( auto call = Call( node ) ) {
+            // Check function symbol
+            if ( !*call.fn_symbol_id ) {
+                if ( func_map.find( call.fn_symbol ) != func_map.end() ) {
+                    *call.fn_symbol_id = func_map[call.fn_symbol].id;
+                } else {
+                    // Unknown symbol
+                    make_error_msg( state, "Undefined identifier", node.ifi,
+                                    RetCode::SemanticError );
+                    auto sim = find_similar_symbol( call.fn_symbol, func_map );
+                    if ( sim ) {
+                        make_info_msg( state,
+                                       "Do you mean '" + sim.value() +
+                                           "' instead? Defined here.",
+                                       func_map[sim.value()].ifi );
+                    }
+                }
+            }
+
+            // Recurse into parameters
+            auto itr = call.args->itr();
+            while ( itr ) {
+                analyze_node( itr.get() );
+                itr.skip_self( 1 );
+            }
         } else {
             // Normal nodes
             // Simply recurse into subnodes
             if ( node.nodes ) {
                 auto itr = node.nodes->itr();
                 while ( itr ) {
-                    analyze_block( itr.get() );
+                    analyze_node( itr.get() );
                     itr.skip_self( 1 );
                 }
             }
@@ -220,7 +287,7 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
     };
 
     // Iterate root node
-    analyze_block( root_node );
+    analyze_node( root_node );
 }
 
 void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
@@ -551,7 +618,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.type_of( instr.result ) = instr.result_type;
         } else if ( instr.type == MT::BinOp ) {
             if ( mir.type_of( instr.p0 ) == 0 ||
-                 mir.type_of( instr.p0 ) == 0 ) {
+                 mir.type_of( instr.p1 ) == 0 ) {
                 make_error_msg( state, "Variable untyped", instr.ifi,
                                 RetCode::SemanticError );
                 return;

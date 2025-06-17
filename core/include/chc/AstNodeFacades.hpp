@@ -414,6 +414,29 @@ public:
     AstNode *body;
 };
 
+class Call : public FacadeBase {
+public:
+    Call( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::Call;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            fn_symbol = itr.get().tok->content;
+            fn_symbol_id = &itr.get().symbol_id;
+            if ( itr.skip( 1 ).get().nodes->length() <= 1 ) {
+                args = &*itr.skip( 1 ).get().nodes;
+            } else {
+                // Pass elements of the CommaList
+                args = &*itr.skip( 1 ).get().nodes->itr().get().nodes;
+            }
+        }
+    }
+
+    String fn_symbol;
+    Opt<SymbolId> *fn_symbol_id;
+    AstCont *args;
+};
+
+
 } // namespace AstNodeFacades
 
 } // namespace chc

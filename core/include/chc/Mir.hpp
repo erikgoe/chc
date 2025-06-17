@@ -49,6 +49,7 @@ struct Mir {
 
     EagerContainer<MirInstr> instrs;
     std::map<SymbolId, VarId> var_map;
+    std::map<SymbolId, VarId> func_map;
     VarId next_var = 1;
     VarId next_type = 1; // TODO
 
