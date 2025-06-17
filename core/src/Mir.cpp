@@ -461,6 +461,7 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
 bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
     return instr.type == MT::Ret || instr.type == MT::Jmp ||
            instr.type == MT::JZero || instr.type == MT::Label ||
+           instr.type == MT::Call ||
            ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
                                           instr.subtype == ArithType::Mod ) );
 }
@@ -477,33 +478,46 @@ void analyze_neededness( CompilerState &state, Mir &mir ) {
             auto succ = get_successors( mir, itr, none );
 
             // Helper
-            auto set_need = [&]( VarId v ) {
+            auto set_needed = [&]( VarId v ) {
                 if ( v != 0 && instr.needed.find( v ) == instr.needed.end() ) {
                     instr.needed.insert( v );
                     saturated = false;
                 }
             };
+            auto set_fn_args_needed = [&]() {
+                // Make all prepended arguments needed
+                auto arg_itr = itr;
+                while ( arg_itr != mir.instrs.begin() ) {
+                    arg_itr.skip_self( -1 );
+                    auto arg = arg_itr.get();
+                    if ( arg.type != MT::Arg )
+                        break;
+                    set_needed( arg.p0 );
+                }
+            };
 
             if ( has_effect( mir, instr ) ) {
                 // Operations with some effect make their parameters needed.
-                set_need( instr.p0 );
-                set_need( instr.p1 );
+                set_needed( instr.p0 );
+                set_needed( instr.p1 );
+                if ( instr.type == MT::Call )
+                    set_fn_args_needed();
             }
             // Transitivity of neededness from successors.
             for ( auto &v : succ.first->needed ) {
                 if ( v != instr.result )
-                    set_need( v );
+                    set_needed( v );
                 if ( instr.result != 0 && v == instr.result ) {
-                    set_need( instr.p0 );
-                    set_need( instr.p1 );
+                    set_needed( instr.p0 );
+                    set_needed( instr.p1 );
                 }
             }
             for ( auto &v : succ.second->needed ) {
                 if ( v != instr.result )
-                    set_need( v );
+                    set_needed( v );
                 if ( instr.result != 0 && v == instr.result ) {
-                    set_need( instr.p0 );
-                    set_need( instr.p1 );
+                    set_needed( instr.p0 );
+                    set_needed( instr.p1 );
                 }
             }
         }
