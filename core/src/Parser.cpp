@@ -54,6 +54,10 @@ String AstNode::get_type_name() const {
         return "BoolConst";
     case AstNode::Type::TernOp:
         return "TernOp";
+    case AstNode::Type::Call:
+        return "Call";
+    case AstNode::Type::CommaList:
+        return "CommaList";
     default:
         return "Unknown";
     }
@@ -135,7 +139,7 @@ bool is_expr( const AstNode &node ) {
            ( node.type == AT::BinOp &&
              !is_asnop_operator( node.tok->content ) ) ||
            node.type == AT::UniOp || node.type == AT::BoolConst ||
-           node.type == AT::TernOp;
+           node.type == AT::TernOp || node.type == AT::Call;
 }
 
 bool is_stmt_body( const AstNode &node ) {
@@ -159,6 +163,18 @@ bool is_stmt( const AstNode &node ) {
 bool is_function_body( const AstNode &node ) {
     return node.type == AT::Block && node.nodes &&
            node.nodes->all( []( const AstNode &n ) { return is_stmt( n ); } );
+}
+
+bool is_comma_list_element( const AstNode &node ) {
+    return is_expr( node ) || node.type == AT::DeclUninit;
+}
+
+bool is_call_ident( const AstNode &node ) {
+    std::vector<String> intrinsic_functions = { "print", "read", "flush" };
+    return node.type == AT::Ident ||
+           ( node.type == AT::None && node.tok->type == TT::Keyword &&
+             std::find( intrinsic_functions.begin(), intrinsic_functions.end(),
+                        node.tok->content ) != intrinsic_functions.end() );
 }
 
 AstNode make_merged_node( AT type, Token main_token,
@@ -300,6 +316,31 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         kw.match( ast_tok( TT::Keyword, "continue" ) ) ) {
                 // Replace with merged token
                 itr.get() = make_merged_node( AT::ContinueStmt, *kw.tok, {} );
+                return true;
+            }
+            return false;
+        } );
+
+    // Function call
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( parent.type == AT::GlobalScope )
+                return false; // Don't interpret function definitions as calls
+
+            auto head = itr.get();
+            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
+            if ( is_call_ident( head ) && paren.type == AT::Paren ) {
+                // Is "<ident> ( ... )"
+                // Remove one consumed element.
+                itr.erase_self();
+
+                if ( head.type == AT::None )
+                    head.type = AT::Ident; // Special functions were parsed like
+                                           // keywords.
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::Call, *head.tok, { head, paren } );
                 return true;
             }
             return false;
@@ -458,6 +499,36 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     // print_ast( root_node, "=After statements"  ); // DEBUG
 
+    // Comma lists
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto comma = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( comma.match( ast_tok( TT::Operator, "," ) ) ) {
+                if ( is_comma_list_element( lhs ) &&
+                     is_comma_list_element( rhs ) ) {
+                    // Remove two consumed elements.
+                    itr.erase_self();
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() = make_merged_node( AT::CommaList, *comma.tok,
+                                                  { lhs, rhs } );
+                    return true;
+                } else if ( lhs.type == AT::CommaList &&
+                            is_comma_list_element( rhs ) ) {
+                    // Remove two consumed elements.
+                    itr.skip( 1 ).erase_self();
+                    itr.skip( 1 ).erase_self();
+                    // Merge into lhs
+                    itr.get().nodes->put( rhs );
+                    return true;
+                }
+            }
+            return false;
+        } );
+
     // Semicolons
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
@@ -573,8 +644,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
             if ( itr.match( ast( AT::DeclUninit ), ast( AT::Paren ),
-                            ast( AT::Block ) ) &&
-                 head.tok->content == "int" && paren.nodes->empty() ) {
+                            ast( AT::Block ) ) ) {
                 // Is "int <ident> ( ... ) { ... }"
                 // Remove two consumed elements.
                 itr.erase_self();
@@ -595,12 +665,49 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( itr.get().type == AT::Paren && parent.type != AT::ForLoop &&
-                 parent.type != AT::FunctionDef ) {
+                 parent.type != AT::FunctionDef && parent.type != AT::Call ) {
                 auto node = itr.get();
                 if ( !node.nodes || node.nodes->length() != 1 ||
                      !is_expr( node.nodes->itr().get() ) )
                     make_error_msg( state,
                                     "Expected expression in parenthesis.",
+                                    node.ifi, RetCode::SyntaxError );
+            }
+            if ( itr.get().type == AT::Paren &&
+                 parent.type != AT::FunctionDef && parent.type != AT::Call ) {
+                auto node = itr.get();
+                if ( node.nodes && node.nodes->length() >= 1 ||
+                     node.nodes->any(
+                         []( auto &&n ) { return n.type == AT::CommaList; } ) )
+                    make_error_msg(
+                        state,
+                        "Comma-separated list only allowed in function "
+                        "definitions and function calls.",
+                        itr.get().ifi, RetCode::SyntaxError );
+            }
+            return false;
+        } );
+
+    // Check for correct node type of elements of comma list
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( itr.get().type == AT::Paren ) {
+                auto node = itr.get();
+                if ( parent.type == AT::FunctionDef &&
+                     node.nodes->any( []( const AstNode &n ) {
+                         return n.type != AT::DeclUninit;
+                     } ) )
+                    make_error_msg( state,
+                                    "Expected parameter declaration in "
+                                    "function definition.",
+                                    node.ifi, RetCode::SyntaxError );
+                if ( parent.type == AT::Call &&
+                     node.nodes->any(
+                         []( const AstNode &n ) { return !is_expr( n ); } ) )
+                    make_error_msg( state,
+                                    "Expected parameter declaration in "
+                                    "function definition.",
                                     node.ifi, RetCode::SyntaxError );
             }
             return false;
@@ -700,25 +807,34 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
 
     AstCont full_graph = *root_node.nodes;
 
-    // Check for global main (and nothing else)
-    if ( full_graph.length() != 1 || !full_graph.first().has_value() ||
-         full_graph.first()->get().type != AT::FunctionDef ) {
-        make_error_msg( state, "Expected single function at global scope.",
-                        InFileInfo{}, RetCode::SyntaxError );
-        return {};
+    // Check for functions at global scope and main function
+    bool found_main = false;
+    auto global_itr = full_graph.itr();
+    while ( global_itr ) {
+        auto node = global_itr.get();
+        if ( node.type != AT::FunctionDef ) {
+            make_error_msg( state, "Expected function in global scope.",
+                            node.ifi, RetCode::SyntaxError );
+            return {};
+        }
+        auto fn_children = node.nodes->itr();
+        if ( fn_children.get().nodes->itr().get().tok->content == "main" &&
+             fn_children.get().tok->content == "int" &&
+             fn_children.skip( 1 ).get().nodes->empty() )
+            found_main = true;
+        global_itr.skip_self( 1 );
     }
-    auto main_fn = full_graph.first()->get();
-    if ( main_fn.nodes->first()->get().nodes->first()->get().tok->content !=
-         "main" ) {
-        make_error_msg( state, "Expected global function with name 'main'.",
-                        main_fn.ifi, RetCode::SyntaxError );
-        return {};
+    if ( !found_main ) {
+        make_error_msg(
+            state, "Expected global function with signature 'int main()'.",
+            InFileInfo{},
+            RetCode::SemanticError ); // TODO move this into SemanticAnalyzer
     }
 
 // DEBUG
 #ifndef NDEBUG
     if ( true ) {
-        full_graph.for_each( [&]( auto &&n ) { print_ast( n, "== AST ==" ); } );
+        print_ast( root_node, "== AST ==" );
     }
 #endif
 

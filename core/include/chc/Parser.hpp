@@ -33,6 +33,8 @@ struct AstNode {
         IfElseStmt,
         WhileLoop,
         ForLoop,
+        Call,
+        CommaList,
 
         count
     } type = Type::None;
