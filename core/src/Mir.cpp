@@ -64,6 +64,14 @@ String Mir::MirInstr::type_name() const {
         return "Jmp";
     case Mir::MirInstr::Type::JZero:
         return "JZero";
+    case Mir::MirInstr::Type::Func:
+        return "Func";
+    case Mir::MirInstr::Type::Param:
+        return "Param";
+    case Mir::MirInstr::Type::Arg:
+        return "Arg";
+    case Mir::MirInstr::Type::Call:
+        return "Call";
     default:
         return "Unknown";
     }
@@ -78,6 +86,17 @@ Mir::TypeId str_to_type( CompilerState &state, const String &str,
     } else {
         make_error_msg( state, "Unknown type name", ifi,
                         RetCode::SemanticError );
+        return 0;
+    }
+}
+String type_to_str( CompilerState &state, Mir::TypeId type, InFileInfo ifi ) {
+    if ( type == Mir::TYPE_INT ) {
+        return "int";
+    } else if ( type == Mir::TYPE_BOOL ) {
+        return "bool";
+    } else {
+        make_error_msg( state, "Unknown type id. This is an internal error.",
+                        ifi, RetCode::InternalError );
         return 0;
     }
 }
@@ -147,11 +166,62 @@ SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
     }
 }
 
+Mir::FunctionSignature &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
+    if ( mir.func_map.find( fn_symbol_id ) == mir.func_map.end() )
+        mir.func_map[fn_symbol_id].label = mir.next_label++;
+    return mir.func_map[fn_symbol_id];
+}
+
+void discover_all_function_signatures( CompilerState &state, Mir &mir,
+                                       AstNode &node ) {
+    if ( auto fn_def = FunctionDef( node ) ) {
+        auto &fn_signature =
+            get_func_signature( mir, fn_def.fn_symbol_id->value() );
+
+        // Return type
+        fn_signature.ret_type =
+            str_to_type( state, fn_def.type, node.nodes->itr().get().ifi );
+
+        // Params
+        auto itr = fn_def.params->itr();
+        while ( itr ) {
+            auto decl = DeclUninit( itr.get() );
+            fn_signature.arg_types.push_back(
+                str_to_type( state, decl.type, node.ifi ) );
+            itr.skip_self( 1 );
+        }
+    } else if ( node.type == AT::GlobalScope ) {
+        // Recurse into function definitions
+        auto itr = node.nodes->itr();
+        while ( itr ) {
+            discover_all_function_signatures( state, mir, itr.get() );
+            itr.skip_self( 1 );
+        }
+    }
+}
+
 void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
     if ( auto fn_def = FunctionDef( node ) ) {
-        // TODO params
-        auto itr = fn_def.stmts->itr();
+        // Label
+        Mir::FunctionSignature fn_signature =
+            get_func_signature( mir, fn_def.fn_symbol_id->value() );
+        mir.instrs.put( MI{ MT::Func, 0, 0, 0, fn_signature.label, node.ifi } );
+
+        // Params
+        auto itr = fn_def.params->itr();
+        while ( itr ) {
+            auto var = mir.next_var++;
+            mir.instrs.put( MI{ MT::Param, var, 0, 0, 0, node.ifi } );
+            auto decl = DeclUninit( itr.get() );
+            mir.var_map[decl.symbol_id->value()] = var;
+            mir.type_of( var ) = str_to_type( state, decl.type, node.ifi );
+            itr.skip_self( 1 );
+        }
+
+        // Body
+        mir.curr_fn_return_type = fn_signature.ret_type;
+        itr = fn_def.stmts->itr();
         while ( itr ) {
             write_mir_instr( state, mir, itr.get(), mir.next_var++ );
             itr.skip_self( 1 );
@@ -181,7 +251,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto ret = Ret( node ) ) {
         VarId tmp = mir.next_var++;
         write_mir_instr( state, mir, *ret.value, tmp );
-        mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi } );
+        mir.instrs.put( MI{ MT::Ret, 0, tmp, 0, 0, node.ifi, ArithType::None,
+                            mir.curr_fn_return_type } );
     } else if ( auto decl = Decl( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
@@ -306,6 +377,26 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::Jmp, 0, 0, 0, loop_lbl, node.ifi } );
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
+    } else if ( auto call = Call( node ) ) {
+        // First evaluate arguments and pass as parameters
+        auto itr = call.args->itr();
+        auto fn_signature =
+            get_func_signature( mir, call.fn_symbol_id->value() );
+        auto arg_type_itr = fn_signature.arg_types.begin();
+        while ( itr ) {
+            auto var = mir.next_var++;
+            write_mir_instr( state, mir, itr.get(), var );
+            mir.instrs.put( MI{ MT::Arg, 0, var, 0, 0, node.ifi,
+                                ArithType::None, *arg_type_itr } );
+
+            itr.skip_self( 1 );
+            ++arg_type_itr;
+        }
+
+        // Call function
+        mir.instrs.put( MI{ MT::Call, into_var, 0, 0, fn_signature.label,
+                            node.ifi, ArithType::None,
+                            fn_signature.ret_type } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
         while ( itr ) {
@@ -548,6 +639,7 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {
     Mir mir;
 
+    discover_all_function_signatures( state, mir, root_node );
     write_mir_instr( state, mir, root_node, mir.next_var++ );
 
     // Check whether there are None ops
@@ -567,6 +659,8 @@ Mir construct_mir( CompilerState &state, AstNode &root_node ) {
             String str = instr.type_name() + " " + to_string( instr.result ) +
                          " " + to_string( instr.p0 ) + " " +
                          to_string( instr.p1 ) + " c" + to_string( instr.imm );
+            if ( instr.type != MT::Func )
+                str = "  " + str; // Intend function bodies slightly
             olog( str );
         } );
     }

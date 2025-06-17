@@ -24,6 +24,10 @@ struct Mir {
             Jmp,
             JZero,
             Uninit,
+            Func,
+            Param,
+            Arg,
+            Call,
 
             count
         } type = Type::None;
@@ -37,7 +41,7 @@ struct Mir {
         InFileInfo ifi;
 
         ArithType subtype = ArithType::None;
-        TypeId result_type = 0;
+        TypeId type_constraint = 0;
 
         std::set<VarId> live;
         std::set<VarId> needed; // Needed variables
@@ -46,16 +50,22 @@ struct Mir {
 
         String type_name() const;
     };
+    struct FunctionSignature {
+        TypeId ret_type;
+        std::vector<TypeId> arg_types;
+        i32 label;
+    };
 
     EagerContainer<MirInstr> instrs;
     std::map<SymbolId, VarId> var_map;
-    std::map<SymbolId, VarId> func_map;
+    std::map<SymbolId, FunctionSignature> func_map;
     VarId next_var = 1;
     VarId next_type = 1; // TODO
 
     i32 next_label = 1;
     std::deque<i32> continue_stack;
     std::deque<i32> break_stack;
+    TypeId curr_fn_return_type;
     std::vector<Opt<decltype( instrs )::Iterator>>
         jump_table; // Maps label ids to instr indices.
 

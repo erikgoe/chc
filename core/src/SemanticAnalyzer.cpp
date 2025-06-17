@@ -610,12 +610,12 @@ void type_checking( CompilerState &state, Mir &mir ) {
     mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
         if ( instr.type == MT::Const ) {
             if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.result_type ) {
+                 mir.type_of( instr.result ) != instr.type_constraint ) {
                 make_error_msg( state, "Type mismatch", instr.ifi,
                                 RetCode::SemanticError );
                 return;
             }
-            mir.type_of( instr.result ) = instr.result_type;
+            mir.type_of( instr.result ) = instr.type_constraint;
         } else if ( instr.type == MT::BinOp ) {
             if ( mir.type_of( instr.p0 ) == 0 ||
                  mir.type_of( instr.p1 ) == 0 ) {
