@@ -654,12 +654,25 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 mir.type_of( instr.result ) = mir.type_of( instr.p0 );
             }
         } else if ( instr.type == MT::Ret ) {
-            if ( mir.type_of( instr.p0 ) != Mir::TYPE_INT ) {
-                // TODO generalize as soon as functions can have any type
-                make_error_msg( state, "Expected return type 'int'", instr.ifi,
+            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
+                make_error_msg( state, "Return type mismatch", instr.ifi,
                                 RetCode::SemanticError );
                 return;
             }
+        } else if ( instr.type == MT::Arg ) {
+            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
+                make_error_msg( state, "Argument type mismatch", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+        } else if ( instr.type == MT::Call ) {
+            if ( mir.type_of( instr.result ) != 0 &&
+                 mir.type_of( instr.result ) != instr.type_constraint ) {
+                make_error_msg( state, "Type mismatch with function result",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = instr.type_constraint;
         } else if ( instr.type == MT::Mov ) {
             if ( instr.p0 != 0 ) {
                 if ( mir.type_of( instr.p0 ) == 0 ) {

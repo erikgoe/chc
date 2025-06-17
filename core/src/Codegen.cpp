@@ -315,7 +315,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // Unknown instruction
             make_error_msg(
                 state,
-                "Unknown mir instruction. This is probably an compiler bug.",
+                "Unknown mir instruction. This is probably a compiler bug.",
                 instr.ifi, RetCode::InternalError );
         }
     } );
