@@ -176,7 +176,9 @@ Mir::FunctionInfo &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
 }
 
 void discover_all_function_signatures( CompilerState &state, Mir &mir,
+                                       SemanticData &semantic_data,
                                        AstNode &node ) {
+    // Iterate global nodes
     if ( auto fn_def = FunctionDef( node ) ) {
         auto &fn_info = get_func_signature( mir, fn_def.fn_symbol_id->value() );
 
@@ -193,10 +195,24 @@ void discover_all_function_signatures( CompilerState &state, Mir &mir,
             itr.skip_self( 1 );
         }
     } else if ( node.type == AT::GlobalScope ) {
+        // Add built-in functions
+        auto make_build_in_type = [&]( const String &symbol, TypeId ret_type,
+                                       Opt<TypeId> param0 ) {
+            auto &fn_info = get_func_signature(
+                mir, semantic_data.build_in_symbols[symbol] );
+            fn_info.ret_type = ret_type;
+            if ( param0 )
+                fn_info.arg_types.push_back( param0.value() );
+        };
+        make_build_in_type( "print", Mir::TYPE_INT, Mir::TYPE_INT );
+        make_build_in_type( "read", Mir::TYPE_INT, {} );
+        make_build_in_type( "flush", Mir::TYPE_INT, {} );
+
         // Recurse into function definitions
         auto itr = node.nodes->itr();
         while ( itr ) {
-            discover_all_function_signatures( state, mir, itr.get() );
+            discover_all_function_signatures( state, mir, semantic_data,
+                                              itr.get() );
             itr.skip_self( 1 );
         }
     }
@@ -678,10 +694,11 @@ void count_function_registers( CompilerState &state, Mir &mir ) {
     }
 }
 
-Mir construct_mir( CompilerState &state, AstNode &root_node ) {
+Mir construct_mir( CompilerState &state, SemanticData &semantic_data,
+                   AstNode &root_node ) {
     Mir mir;
 
-    discover_all_function_signatures( state, mir, root_node );
+    discover_all_function_signatures( state, mir, semantic_data, root_node );
     write_mir_instr( state, mir, root_node, mir.next_var++ );
 
     // Check whether there are None ops

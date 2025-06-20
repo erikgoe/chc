@@ -1,8 +1,9 @@
 #include "../include/chc/Core.hpp"
 #include "../include/chc/Lexer.hpp"
 #include "../include/chc/Parser.hpp"
-#include "../include/chc/SemanticAnalyzer.hpp"
+#include "../include/chc/AstAnalysis.hpp"
 #include "../include/chc/Mir.hpp"
+#include "../include/chc/MirAnalysis.hpp"
 #include "../include/chc/Codegen.hpp"
 
 namespace chc {
@@ -27,11 +28,12 @@ void Core::compile() {
                 return;
 
             operator_transformation( state, root );
-            basic_semantic_checks( state, root );
+            SemanticData semantic_data;
+            basic_semantic_checks( state, semantic_data, root );
             if ( !state.success )
                 return;
 
-            auto mir = construct_mir( state, root );
+            auto mir = construct_mir( state, semantic_data, root );
             use_before_init_and_return_check( state, mir );
             drop_uninit_instrs( state, mir );
             if ( !state.success )
@@ -49,7 +51,8 @@ void Core::compile() {
             count_function_registers( state, mir );
 
             EagerContainer<Assembly_x86> asm_code;
-            generate_code_x86( state, file_content, mir, asm_code );
+            generate_code_x86( state, file_content, mir, semantic_data,
+                               asm_code );
             assembly += "/* FILE " + file_path + " */\n";
             generate_asm_text_x86( state, asm_code, assembly );
             assembly += "\n";

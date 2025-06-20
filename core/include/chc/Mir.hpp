@@ -2,6 +2,7 @@
 #include "pch.hpp"
 #include "Parser.hpp"
 #include "AstNodeFacades.hpp"
+#include "AstAnalysis.hpp"
 
 namespace chc {
 
@@ -96,6 +97,7 @@ void create_register_mapping( CompilerState &state, Mir &mir );
 /// Calculates for every function how many registers are needed (i. e. written).
 void count_function_registers( CompilerState &state, Mir &mir );
 
-Mir construct_mir( CompilerState &state, AstNode &root_node );
+Mir construct_mir( CompilerState &state, SemanticData &semantic_data,
+                   AstNode &root_node );
 
 } // namespace chc

@@ -1,4 +1,4 @@
-#include "../include/chc/Parser.hpp"
+#include "../include/chc/AstAnalysis.hpp"
 #include "../include/chc/Message.hpp"
 #include "../include/chc/AstNodeFacades.hpp"
 #include "../include/chc/ParserUtils.hpp"
@@ -12,10 +12,6 @@ using AstItr = EagerContainer<AstNode>::Iterator;
 
 using namespace AstNodeFacades;
 
-struct SymbolDecl {
-    SymbolId id;
-    InFileInfo ifi;
-};
 struct SymbolStackEntry {
     SymbolId first_symbol;
     std::vector<std::pair<String, SymbolDecl>> symbols;
@@ -65,9 +61,21 @@ Opt<String> find_similar_symbol(
     return best_match.empty() ? Opt<String>{} : best_match;
 }
 
-void global_symbol_analysis( CompilerState &state, AstNode &root_node,
-                             std::unordered_map<String, SymbolDecl> &func_map,
-                             SymbolId &next_symbol ) {
+void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
+                             AstNode &root_node ) {
+    InFileInfo no_ifi;
+    auto &func_map = semantic_data.func_map;
+
+    // Add built-in functions
+    auto add_built_in = [&]( const String &symbol ) {
+        func_map[symbol] = SymbolDecl{ semantic_data.next_symbol++, no_ifi };
+        semantic_data.build_in_symbols[symbol] = semantic_data.next_symbol - 1;
+    };
+    add_built_in( "print" );
+    add_built_in( "read" );
+    add_built_in( "flush" );
+
+    // Iterate global nodes
     std::function<void( AstNode & )> analyze_node;
     analyze_node = [&]( AstNode &node ) {
         // Check node
@@ -85,10 +93,11 @@ void global_symbol_analysis( CompilerState &state, AstNode &root_node,
                                present_sym->second.ifi );
             } else {
                 // New symbol
-                func_map[def.fn_symbol] = SymbolDecl{ next_symbol++, node.ifi };
+                func_map[def.fn_symbol] =
+                    SymbolDecl{ semantic_data.next_symbol++, node.ifi };
             }
-            *def.fn_symbol_id =
-                next_symbol - 1; // Set the new symbol's id (if any)
+            *def.fn_symbol_id = semantic_data.next_symbol -
+                                1; // Set the new symbol's id (if any)
         } else if ( node.type == AT::GlobalScope ) {
             // Recurse global scope
             if ( node.nodes ) {
@@ -105,16 +114,16 @@ void global_symbol_analysis( CompilerState &state, AstNode &root_node,
     analyze_node( root_node );
 }
 
-void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
-    std::unordered_map<String, SymbolDecl> symbol_map;
-    std::unordered_map<String, SymbolDecl> func_map;
-    SymbolId next_symbol = 1;
+void analyze_symbol_definitions( CompilerState &state,
+                                 SemanticData &semantic_data,
+                                 AstNode &root_node ) {
+    auto &symbol_map = semantic_data.symbol_map;
+    auto &func_map = semantic_data.func_map;
     std::deque<SymbolStackEntry> prev_stack;
-    prev_stack.push_back( SymbolStackEntry{ next_symbol } );
+    prev_stack.push_back( SymbolStackEntry{ semantic_data.next_symbol } );
 
     // First analyze global scope
-    // TODO use struct for common analysis variables
-    global_symbol_analysis( state, root_node, func_map, next_symbol );
+    global_symbol_analysis( state, semantic_data, root_node );
 
     // Analyze all blocks
     std::function<void( AstNode & )> analyze_node;
@@ -136,11 +145,12 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
                     // Copy existing symbols in buffer and create a new
                     // symbol
                     ps.symbols.push_back( *present_sym );
-                    symbol_map[symbol] = SymbolDecl{ next_symbol++, ifi };
+                    symbol_map[symbol] =
+                        SymbolDecl{ semantic_data.next_symbol++, ifi };
 
                     // Actually specification forbids this shadowing...
                     make_error_msg( state,
-                                    "Symbol already defined in other scope "
+                                    "Symbol already defined in another scope "
                                     "(shadowing forbidden).",
                                     ifi, RetCode::SemanticError );
                     make_info_msg( state, "Previously defined here.",
@@ -148,13 +158,16 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
                 }
             } else {
                 // New symbol
-                symbol_map[symbol] = SymbolDecl{ next_symbol++, ifi };
+                symbol_map[symbol] =
+                    SymbolDecl{ semantic_data.next_symbol++, ifi };
                 ps.missing_symbols.push_back( symbol );
             }
-            return next_symbol - 1; // Returns the new symbol's id (if any)
+            return semantic_data.next_symbol -
+                   1; // Returns the new symbol's id (if any)
         };
         auto push_var_stack = [&]() {
-            prev_stack.push_back( SymbolStackEntry{ next_symbol } );
+            prev_stack.push_back(
+                SymbolStackEntry{ semantic_data.next_symbol } );
         };
         auto pop_var_stack = [&]() {
             for ( auto &entry : prev_stack.back().symbols ) {
@@ -290,9 +303,10 @@ void analyze_symbol_definitions( CompilerState &state, AstNode &root_node ) {
     analyze_node( root_node );
 }
 
-void basic_semantic_checks( CompilerState &state, AstNode &root_node ) {
+void basic_semantic_checks( CompilerState &state, SemanticData &semantic_data,
+                            AstNode &root_node ) {
     // First analyze symbols
-    analyze_symbol_definitions( state, root_node );
+    analyze_symbol_definitions( state, semantic_data, root_node );
 
     // Check if all symbols were matched
     if ( state.success ) {
@@ -517,179 +531,6 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
             [&]( auto &&n ) { print_ast( n, "== TRANSFORMED AST ==" ); } );
     }
 #endif
-}
-
-using MI = Mir::MirInstr;
-using MT = Mir::MirInstr::Type;
-using VarId = Mir::VarId;
-
-void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
-    std::vector<std::vector<VarId>> instr_uninits; // For each instr
-    instr_uninits.resize( mir.instrs.length() + 1 );
-    std::vector<Opt<bool>> instr_had_return; // For each instr
-    instr_had_return.resize( mir.instrs.length() + 1 );
-
-    // Check only reachable code
-    size_t i = 0;
-    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
-        std::vector<VarId> uninits = instr_uninits[i];
-
-        // Check variable usage
-        if ( instr.p0 != 0 && std::find( uninits.begin(), uninits.end(),
-                                         instr.p0 ) != uninits.end() ) {
-            // p0 not defined
-            make_error_msg( state, "Using undefined variable", instr.ifi,
-                            RetCode::SemanticError );
-        }
-        if ( instr.p1 != 0 && std::find( uninits.begin(), uninits.end(),
-                                         instr.p1 ) != uninits.end() ) {
-            // p1 not defined
-            make_error_msg( state, "Using undefined variable", instr.ifi,
-                            RetCode::SemanticError );
-        }
-
-        if ( instr.type == MT::Uninit ) {
-            // Memorize uninitialized variables
-            uninits.push_back( instr.result );
-        } else if ( instr.type == MT::Ret ) {
-            // Some random specification rule, defines that this "defines" all
-            // undefined variables ...
-            uninits.clear();
-        } else if ( instr.result != 0 ) {
-            // Is defined
-            uninits.erase(
-                std::remove_if( uninits.begin(), uninits.end(),
-                                [&]( auto &&u ) { return u == instr.result; } ),
-                uninits.end() );
-        }
-
-        // Return statement
-        instr_had_return[i] =
-            instr_had_return[i].value_or( false ) || instr.type == MT::Ret;
-
-        // Add successors
-        if ( instr.type != MT::Jmp ) {
-            // Next instr is reached
-            instr_uninits[i + 1].insert( instr_uninits[i + 1].end(),
-                                         uninits.begin(), uninits.end() );
-            instr_had_return[i + 1] =
-                instr_had_return[i + 1].value_or( true ) &&
-                instr_had_return[i].value();
-        }
-        if ( instr.type == MT::Jmp || instr.type == MT::JZero ) {
-            // Next specified by imm
-            ssize_t next_idx = *mir.jump_table[instr.imm] - mir.instrs.begin();
-            instr_uninits[next_idx].insert( instr_uninits[next_idx].end(),
-                                            uninits.begin(), uninits.end() );
-            instr_had_return[next_idx] =
-                instr_had_return[next_idx].value_or( true ) &&
-                instr_had_return[i].value();
-        }
-
-        i++;
-    } );
-
-    // Check for missing return statement
-    if ( !instr_had_return.empty() && ( !instr_had_return.back().has_value() ||
-                                        !instr_had_return.back().value() ) ) {
-        make_error_msg( state, "Found path without return statement",
-                        InFileInfo{}, RetCode::SemanticError );
-    }
-}
-
-void drop_uninit_instrs( CompilerState &state, Mir &mir ) {
-    mir.instrs.for_each( [&]( Mir::MirInstr &instr ) {
-        if ( instr.type == MT::Uninit ) {
-            instr.type = MT::Nop;
-            instr.result = 0;
-        }
-    } );
-}
-
-void type_checking( CompilerState &state, Mir &mir ) {
-    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
-        if ( instr.type == MT::Const ) {
-            if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.type_constraint ) {
-                make_error_msg( state, "Type mismatch", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-            mir.type_of( instr.result ) = instr.type_constraint;
-        } else if ( instr.type == MT::BinOp ) {
-            if ( mir.type_of( instr.p0 ) == 0 ||
-                 mir.type_of( instr.p1 ) == 0 ) {
-                make_error_msg( state, "Variable untyped", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-            if ( mir.type_of( instr.p0 ) != mir.type_of( instr.p1 ) ) {
-                make_error_msg( state, "Type mismatch", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-            if ( ( has_only_int_params( instr.subtype ) &&
-                   mir.type_of( instr.p0 ) != Mir::TYPE_INT ) ||
-                 ( has_only_int_ret( instr.subtype ) &&
-                   mir.type_of( instr.result ) != 0 &&
-                   mir.type_of( instr.result ) != Mir::TYPE_INT ) ) {
-                make_error_msg( state, "Expected type 'int'", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-            if ( ( has_only_bool_params( instr.subtype ) &&
-                   mir.type_of( instr.p0 ) != Mir::TYPE_BOOL ) ||
-                 ( has_only_bool_ret( instr.subtype ) &&
-                   mir.type_of( instr.result ) != 0 &&
-                   mir.type_of( instr.result ) != Mir::TYPE_BOOL ) ) {
-                make_error_msg( state, "Expected type 'bool'", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-            if ( has_only_int_ret( instr.subtype ) ) {
-                mir.type_of( instr.result ) = mir.TYPE_INT;
-            } else if ( has_only_bool_ret( instr.subtype ) ) {
-                mir.type_of( instr.result ) = mir.TYPE_BOOL;
-            } else if ( has_any_type_ret( instr.subtype ) ) {
-                mir.type_of( instr.result ) = mir.type_of( instr.p0 );
-            }
-        } else if ( instr.type == MT::Ret ) {
-            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
-                make_error_msg( state, "Return type mismatch", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-        } else if ( instr.type == MT::Arg ) {
-            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
-                make_error_msg( state, "Argument type mismatch", instr.ifi,
-                                RetCode::SemanticError );
-                return;
-            }
-        } else if ( instr.type == MT::Call ) {
-            if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.type_constraint ) {
-                make_error_msg( state, "Type mismatch with function result",
-                                instr.ifi, RetCode::SemanticError );
-                return;
-            }
-            mir.type_of( instr.result ) = instr.type_constraint;
-        } else if ( instr.type == MT::Mov ) {
-            if ( instr.p0 != 0 ) {
-                if ( mir.type_of( instr.p0 ) == 0 ) {
-                    make_error_msg( state, "Variable untyped", instr.ifi,
-                                    RetCode::SemanticError );
-                    return;
-                }
-                if ( mir.type_of( instr.result ) != 0 &&
-                     mir.type_of( instr.result ) != mir.type_of( instr.p0 ) ) {
-                    make_error_msg( state, "Type mismatch", instr.ifi,
-                                    RetCode::SemanticError );
-                    return;
-                }
-                mir.type_of( instr.result ) = mir.type_of( instr.p0 );
-            }
-        }
-    } );
 }
 
 } // namespace chc

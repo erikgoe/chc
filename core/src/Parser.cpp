@@ -145,7 +145,8 @@ bool is_expr( const AstNode &node ) {
 bool is_stmt_body( const AstNode &node ) {
     return node.type == AT::Decl || node.type == AT::DeclUninit ||
            node.type == AT::AsnOp || node.type == AT::Ret ||
-           node.type == AT::BreakStmt || node.type == AT::ContinueStmt;
+           node.type == AT::BreakStmt || node.type == AT::ContinueStmt ||
+           node.type == AT::Call;
 }
 
 bool is_lvalue( const AstNode &node ) {
@@ -170,11 +171,11 @@ bool is_comma_list_element( const AstNode &node ) {
 }
 
 bool is_call_ident( const AstNode &node ) {
-    std::vector<String> intrinsic_functions = { "print", "read", "flush" };
+    std::vector<String> built_in_functions = { "print", "read", "flush" };
     return node.type == AT::Ident ||
-           ( node.type == AT::None && node.tok->type == TT::Keyword &&
-             std::find( intrinsic_functions.begin(), intrinsic_functions.end(),
-                        node.tok->content ) != intrinsic_functions.end() );
+           ( node.type == AT::Token && node.tok->type == TT::Keyword &&
+             std::find( built_in_functions.begin(), built_in_functions.end(),
+                        node.tok->content ) != built_in_functions.end() );
 }
 
 AstNode make_merged_node( AT type, Token main_token,
@@ -335,9 +336,11 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 // Remove one consumed element.
                 itr.erase_self();
 
-                if ( head.type == AT::None )
-                    head.type = AT::Ident; // Special functions were parsed like
-                                           // keywords.
+                if ( head.type == AT::Token ) {
+                    // Special functions were parsed like keywords.
+                    head.type = AT::Ident;
+                }
+
                 // Replace with merged token
                 itr.get() =
                     make_merged_node( AT::Call, *head.tok, { head, paren } );

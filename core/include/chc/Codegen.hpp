@@ -32,9 +32,11 @@ struct Assembly_x86 {
     enum class OpCode {
         None,
 
+        Raw, // raw assembly line
         Comment, // block comment
         Global, // ".global <str>"
         Text, // ".text"
+        Extern, // ".extern <str>"
         Label, // "<str>:"
 
         Nop,
@@ -47,6 +49,7 @@ struct Assembly_x86 {
         MovFromStack64, // "mov1 $<imm>(%rbp), <dest>"
         MovToStack, // "movl <src>, $<imm>(%rbp)"
         MovZeroExtend, // "movzbl %al, %eax"
+        MovSymbolWithRip64, // "movl <str>(%rip), <dest>"
         Syscall,
         Add,
         Add64,
@@ -69,6 +72,7 @@ struct Assembly_x86 {
         Ret,
         Push,
         Pop,
+        AddSp, // "addq $<imm>, %rsp"
 
         Enter, // "enter $<imm>, $0"
         Leave,
@@ -86,7 +90,8 @@ struct Assembly_x86 {
 };
 
 void generate_code_x86( CompilerState &state, const String &original_source,
-                        Mir &mir, EagerContainer<Assembly_x86> &assembly );
+                        Mir &mir, SemanticData &semantic_data,
+                        EagerContainer<Assembly_x86> &assembly );
 
 void generate_asm_text_x86( CompilerState &state,
                             const EagerContainer<Assembly_x86> &assembly,

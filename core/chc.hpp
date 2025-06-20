@@ -7,8 +7,9 @@
 #include "src/Message.cpp"
 #include "src/Lexer.cpp"
 #include "src/Parser.cpp"
-#include "src/SemanticAnalyzer.cpp"
+#include "src/AstAnalysis.cpp"
 #include "src/Mir.cpp"
+#include "src/MirAnalysis.cpp"
 #include "src/Codegen.cpp"
 
 #endif
