@@ -269,6 +269,15 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_empty( AOC::Text, no_ifi );
     put_label( "main", no_ifi );
     put_str( AOC::Call, main_fn_label, no_ifi );
+
+    // Call flush after main. Push twice to keep alignment
+    put_src_reg( AOC::Push, HwReg::eax, no_ifi );
+    put_src_reg( AOC::Push, HwReg::eax, no_ifi );
+    put_str( AOC::Call, get_fn_label( semantic_data.func_map["flush"].id ),
+             no_ifi );
+    put_reg( AOC::Pop, HwReg::eax, no_ifi );
+    put_reg( AOC::Pop, HwReg::eax, no_ifi );
+
     put_reg_reg( AOC::Mov, HwReg::edi, HwReg::eax, no_ifi );
     put_reg_imm( AOC::MovConst, HwReg::eax, 0x3c, no_ifi );
     put_empty( AOC::Syscall, no_ifi );
