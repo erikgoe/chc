@@ -9,6 +9,7 @@ using MI = Mir::MirInstr;
 using MT = Mir::MirInstr::Type;
 using VarId = Mir::VarId;
 using RegId = Mir::RegId;
+using TypeId = Mir::TypeId;
 
 
 using namespace AstNodeFacades;
@@ -166,27 +167,28 @@ SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
     }
 }
 
-Mir::FunctionSignature &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
-    if ( mir.func_map.find( fn_symbol_id ) == mir.func_map.end() )
+Mir::FunctionInfo &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
+    if ( mir.func_map.find( fn_symbol_id ) == mir.func_map.end() ) {
         mir.func_map[fn_symbol_id].label = mir.next_label++;
+        mir.func_label_to_symbol[mir.next_label - 1] = fn_symbol_id;
+    }
     return mir.func_map[fn_symbol_id];
 }
 
 void discover_all_function_signatures( CompilerState &state, Mir &mir,
                                        AstNode &node ) {
     if ( auto fn_def = FunctionDef( node ) ) {
-        auto &fn_signature =
-            get_func_signature( mir, fn_def.fn_symbol_id->value() );
+        auto &fn_info = get_func_signature( mir, fn_def.fn_symbol_id->value() );
 
         // Return type
-        fn_signature.ret_type =
+        fn_info.ret_type =
             str_to_type( state, fn_def.type, node.nodes->itr().get().ifi );
 
         // Params
         auto itr = fn_def.params->itr();
         while ( itr ) {
             auto decl = DeclUninit( itr.get() );
-            fn_signature.arg_types.push_back(
+            fn_info.arg_types.push_back(
                 str_to_type( state, decl.type, node.ifi ) );
             itr.skip_self( 1 );
         }
@@ -204,9 +206,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
     if ( auto fn_def = FunctionDef( node ) ) {
         // Label
-        Mir::FunctionSignature fn_signature =
+        Mir::FunctionInfo fn_info =
             get_func_signature( mir, fn_def.fn_symbol_id->value() );
-        mir.instrs.put( MI{ MT::Func, 0, 0, 0, fn_signature.label, node.ifi } );
+        mir.instrs.put( MI{ MT::Func, 0, 0, 0, fn_info.label, node.ifi } );
+        if ( fn_def.fn_symbol == "main" )
+            mir.main_function_symbol = fn_def.fn_symbol_id->value();
 
         // Params
         auto itr = fn_def.params->itr();
@@ -220,7 +224,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         }
 
         // Body
-        mir.curr_fn_return_type = fn_signature.ret_type;
+        mir.curr_fn_return_type = fn_info.ret_type;
         itr = fn_def.stmts->itr();
         while ( itr ) {
             write_mir_instr( state, mir, itr.get(), mir.next_var++ );
@@ -378,25 +382,30 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         add_jump_label_target( mir, skip_lbl, mir.instrs.end() );
         mir.instrs.put( MI{ MT::Label, 0, 0, 0, skip_lbl, node.ifi } );
     } else if ( auto call = Call( node ) ) {
-        // First evaluate arguments and pass as parameters
+        // First evaluate arguments (in normal order) and pass as parameters
+        // (in reverse order)
         auto itr = call.args->itr();
-        auto fn_signature =
-            get_func_signature( mir, call.fn_symbol_id->value() );
-        auto arg_type_itr = fn_signature.arg_types.begin();
+        auto fn_info = get_func_signature( mir, call.fn_symbol_id->value() );
+        auto arg_type_itr = fn_info.arg_types.begin();
+        std::deque<std::pair<VarId, TypeId>> rev_vars;
         while ( itr ) {
             auto var = mir.next_var++;
             write_mir_instr( state, mir, itr.get(), var );
-            mir.instrs.put( MI{ MT::Arg, 0, var, 0, 0, node.ifi,
-                                ArithType::None, *arg_type_itr } );
-
+            rev_vars.push_back( std::make_pair( var, *arg_type_itr ) );
             itr.skip_self( 1 );
             ++arg_type_itr;
         }
+        // Put arguments in reverse order (later for the stack).
+        while ( !rev_vars.empty() ) {
+            mir.instrs.put( MI{ MT::Arg, 0, rev_vars.back().first, 0,
+                                fn_info.label, node.ifi, ArithType::None,
+                                rev_vars.back().second } );
+            rev_vars.pop_back();
+        }
 
         // Call function
-        mir.instrs.put( MI{ MT::Call, into_var, 0, 0, fn_signature.label,
-                            node.ifi, ArithType::None,
-                            fn_signature.ret_type } );
+        mir.instrs.put( MI{ MT::Call, into_var, 0, 0, fn_info.label, node.ifi,
+                            ArithType::None, fn_info.ret_type } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
         while ( itr ) {
@@ -461,7 +470,8 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
 bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
     return instr.type == MT::Ret || instr.type == MT::Jmp ||
            instr.type == MT::JZero || instr.type == MT::Label ||
-           instr.type == MT::Call ||
+           instr.type == MT::Func || instr.type == MT::Arg ||
+           instr.type == MT::Param || instr.type == MT::Call ||
            ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
                                           instr.subtype == ArithType::Mod ) );
 }
@@ -633,8 +643,6 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
         }
 
         mir.reg_mapping[v] = r;
-        if ( r + 1 > mir.reg_count )
-            mir.reg_count = r + 1;
     }
 
     // DEBUG
@@ -648,6 +656,26 @@ void create_register_mapping( CompilerState &state, Mir &mir ) {
         }
     }
 #endif
+}
+
+void count_function_registers( CompilerState &state, Mir &mir ) {
+    Mir::FunctionInfo *fn_info = nullptr;
+
+    auto itr = mir.instrs.itr();
+    while ( itr ) {
+        auto instr = itr.get();
+        if ( instr.type == MT::Func ) {
+            fn_info = &mir.func_map[mir.func_label_to_symbol[instr.imm]];
+        } else {
+            if ( instr.result != 0 ) {
+                // Register is used in this function
+                fn_info->max_register_used = std::max(
+                    fn_info->max_register_used, mir.reg_mapping[instr.result] );
+            }
+        }
+
+        itr.skip_self( 1 );
+    }
 }
 
 Mir construct_mir( CompilerState &state, AstNode &root_node ) {

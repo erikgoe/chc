@@ -50,15 +50,17 @@ struct Mir {
 
         String type_name() const;
     };
-    struct FunctionSignature {
+    struct FunctionInfo {
         TypeId ret_type;
         std::vector<TypeId> arg_types;
         i32 label;
+        size_t max_register_used = 0;
     };
 
     EagerContainer<MirInstr> instrs;
     std::map<SymbolId, VarId> var_map;
-    std::map<SymbolId, FunctionSignature> func_map;
+    std::map<SymbolId, FunctionInfo> func_map;
+    std::map<i32, SymbolId> func_label_to_symbol;
     VarId next_var = 1;
     VarId next_type = 1; // TODO
 
@@ -70,7 +72,7 @@ struct Mir {
         jump_table; // Maps label ids to instr indices.
 
     std::vector<RegId> reg_mapping;
-    RegId reg_count = 0; // Maximum used registers
+    SymbolId main_function_symbol;
 
     std::vector<TypeId> types; // Maps variables to types
     TypeId &type_of( VarId var ) {
@@ -90,6 +92,9 @@ void analyze_neededness( CompilerState &state, Mir &mir );
 void trim_dead_code( CompilerState &state, Mir &mir );
 
 void create_register_mapping( CompilerState &state, Mir &mir );
+
+/// Calculates for every function how many registers are needed (i. e. written).
+void count_function_registers( CompilerState &state, Mir &mir );
 
 Mir construct_mir( CompilerState &state, AstNode &root_node );
 

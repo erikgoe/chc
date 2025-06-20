@@ -39,14 +39,19 @@ struct Assembly_x86 {
 
         Nop,
         Call, // "call <str>"
-        Mov, // "mov <src>, <dest>"
+        Mov, // "movl <src>, <dest>"
+        Mov64, // "movq <src>, <dest>"
         MovConst, // "mov $<imm>, <dest>"
-        MovFromStack, // "movl $<imm>(%esp), <dest>"
-        MovToStack, // "movl <src>, $<imm>(%esp)"
+        MovConst64, // "mov $<imm>, <dest>"
+        MovFromStack, // "movl $<imm>(%rbp), <dest>"
+        MovFromStack64, // "mov1 $<imm>(%rbp), <dest>"
+        MovToStack, // "movl <src>, $<imm>(%rbp)"
         MovZeroExtend, // "movzbl %al, %eax"
         Syscall,
         Add,
+        Add64,
         Sub,
+        Sub64,
         IMul,
         IDiv,
         Cltd,
@@ -62,6 +67,8 @@ struct Assembly_x86 {
         Jz,
         Cmp,
         Ret,
+        Push,
+        Pop,
 
         Enter, // "enter $<imm>, $0"
         Leave,
@@ -71,7 +78,7 @@ struct Assembly_x86 {
 
     HwReg dest = HwReg::None;
     HwReg src = HwReg::None;
-    i32 imm = 0;
+    i32 imm = 0; // Immediate values, but also label and function ids.
 
     String str;
 

@@ -46,6 +46,7 @@ void Core::compile() {
             create_register_mapping( state, mir );
             if ( !state.success )
                 return;
+            count_function_registers( state, mir );
 
             EagerContainer<Assembly_x86> asm_code;
             generate_code_x86( state, file_content, mir, asm_code );

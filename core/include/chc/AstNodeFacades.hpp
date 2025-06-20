@@ -120,11 +120,13 @@ public:
             type = itr.get().tok->content;
             fn_symbol = decl_itr.get().tok->content;
             fn_symbol_id = &decl_itr.get().symbol_id;
-            if ( itr.skip( 1 ).get().nodes->length() <= 1 ) {
-                params = &*itr.skip( 1 ).get().nodes;
+            auto &paren_content = itr.skip( 1 ).get().nodes;
+            if ( paren_content->empty() ||
+                 paren_content->itr().get().type != AstNode::Type::CommaList ) {
+                params = &*paren_content;
             } else {
                 // Pass elements of the CommaList
-                params = &*itr.skip( 1 ).get().nodes->itr().get().nodes;
+                params = &*paren_content->itr().get().nodes;
             }
             stmts = &*itr.skip( 2 ).get().nodes;
         }
@@ -422,11 +424,13 @@ public:
             auto itr = to_wrap.nodes->itr();
             fn_symbol = itr.get().tok->content;
             fn_symbol_id = &itr.get().symbol_id;
-            if ( itr.skip( 1 ).get().nodes->length() <= 1 ) {
-                args = &*itr.skip( 1 ).get().nodes;
+            auto &paren_content = itr.skip( 1 ).get().nodes;
+            if ( paren_content->empty() ||
+                 paren_content->itr().get().type != AstNode::Type::CommaList ) {
+                args = &*paren_content;
             } else {
                 // Pass elements of the CommaList
-                args = &*itr.skip( 1 ).get().nodes->itr().get().nodes;
+                args = &*paren_content->itr().get().nodes;
             }
         }
     }

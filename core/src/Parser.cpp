@@ -692,22 +692,27 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            if ( itr.get().type == AT::Paren ) {
+            if ( itr.get().type == AT::Paren &&
+                 itr.get().nodes->length() > 0 ) {
                 auto node = itr.get();
+                auto &comma_list = node.nodes->itr().get();
                 if ( parent.type == AT::FunctionDef &&
-                     node.nodes->any( []( const AstNode &n ) {
+                     comma_list.type == AT::CommaList &&
+                     comma_list.nodes->any( []( const AstNode &n ) {
                          return n.type != AT::DeclUninit;
-                     } ) )
+                     } ) ) {
                     make_error_msg( state,
                                     "Expected parameter declaration in "
                                     "function definition.",
                                     node.ifi, RetCode::SyntaxError );
+                }
                 if ( parent.type == AT::Call &&
-                     node.nodes->any(
+                     comma_list.type == AT::CommaList &&
+                     comma_list.nodes->any(
                          []( const AstNode &n ) { return !is_expr( n ); } ) )
                     make_error_msg( state,
                                     "Expected parameter declaration in "
-                                    "function definition.",
+                                    "function call.",
                                     node.ifi, RetCode::SyntaxError );
             }
             return false;

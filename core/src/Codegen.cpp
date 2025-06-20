@@ -14,6 +14,12 @@ using HwReg = Assembly_x86::HwReg;
 #define AMS_CODE_LINE_COMMENTS
 #endif
 
+// Used for tracking register states regarding stack pushing.
+struct RegisterState {
+    bool written_to = false; // Whether it must be saved
+    bool pushed_to_stack = false; // Whether it was saved
+};
+
 void split_into_lines( const String &str, std::vector<String> &lines ) {
     String tmp;
     for ( auto c : str ) {
@@ -45,7 +51,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                         Mir &mir, EagerContainer<Assembly_x86> &assembly ) {
     constexpr HwReg no_reg = HwReg::None;
     RegId virtual_stack_start_reg = 12; // DEBUG
+    RegId caller_saved_reg_count = 6;
     InFileInfo no_ifi;
+
+    std::map<HwReg, RegisterState> reg_states;
+    bool saved_caller_registers = false;
+    size_t loaded_parm_count = 0;
+    Mir::FunctionInfo curr_fn_info;
 
     // Source code lines
 #ifdef AMS_CODE_LINE_COMMENTS
@@ -67,6 +79,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     };
     auto put_reg = [&]( AOC opcode, HwReg dest, const InFileInfo &ifi ) {
         assembly.put( Assembly_x86{ opcode, dest, no_reg, 0, "", ifi } );
+    };
+    auto put_src_reg = [&]( AOC opcode, HwReg src, const InFileInfo &ifi ) {
+        assembly.put( Assembly_x86{ opcode, no_reg, src, 0, "", ifi } );
     };
     auto put_reg_imm = [&]( AOC opcode, HwReg dest, i32 imm,
                             const InFileInfo &ifi ) {
@@ -97,19 +112,19 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // Map normal registers
             switch ( reg ) {
             case 1:
-                return HwReg::ebx;
+                return HwReg::ecx; // caller saved
             case 2:
-                return HwReg::ecx;
+                return HwReg::esi; // caller saved
             case 3:
-                return HwReg::esi;
+                return HwReg::edi; // caller saved
             case 4:
-                return HwReg::edi;
+                return HwReg::r8d; // caller saved
             case 5:
-                return HwReg::r8d;
+                return HwReg::r9d; // caller saved
             case 6:
-                return HwReg::r9d;
+                return HwReg::r11d; // caller saved
             case 7:
-                return HwReg::r11d;
+                return HwReg::ebx;
             case 8:
                 return HwReg::r12d;
             case 9:
@@ -146,14 +161,15 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             if ( hw_reg != dest_reg ) {
                 // Copy into destination register.
                 put_reg_reg( AOC::Mov, dest_reg, hw_reg, ifi );
+                reg_states[dest_reg].written_to = true;
             }
-
             return;
         }
 
         // Load from stack first
         size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
         put_reg_imm( AOC::MovFromStack, dest_reg, addr_offset, ifi );
+        reg_states[dest_reg].written_to = true;
     };
     // Write back to stack if necessary
     auto writeback_opt = [&]( VarId to_var, HwReg src_reg,
@@ -168,8 +184,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             if ( to_hw_reg( reg ) != src_reg ) {
                 // Copy back into original register.
                 put_reg_reg( AOC::Mov, to_hw_reg( reg ), src_reg, ifi );
+                reg_states[to_hw_reg( reg )].written_to = true;
             }
-
             return;
         }
 
@@ -178,22 +194,70 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         put_src_reg_imm( AOC::MovToStack, src_reg, addr_offset, ifi );
     };
 
+    // Saving register to stack for function calls
+    auto is_caller_saved = []( HwReg reg ) {
+        return reg == HwReg::ecx || reg == HwReg::esi || reg == HwReg::edi ||
+               reg == HwReg::r8d || reg == HwReg::r9d || reg == HwReg::r11d;
+    };
+    auto save_callee_registers = [&]( size_t used_regs_count, InFileInfo ifi ) {
+        if ( used_regs_count > caller_saved_reg_count ) {
+            size_t need_to_save =
+                std::min( used_regs_count, virtual_stack_start_reg ) -
+                caller_saved_reg_count;
+            for ( size_t i = 0; i < need_to_save; i++ ) {
+                put_src_reg( AOC::Push,
+                             to_hw_reg( caller_saved_reg_count + i + 1 ), ifi );
+            }
+        }
+    };
+    auto restore_callee_registers = [&]( size_t used_regs_count,
+                                         InFileInfo ifi ) {
+        if ( used_regs_count > caller_saved_reg_count ) {
+            size_t need_to_save =
+                std::min( used_regs_count, virtual_stack_start_reg ) -
+                caller_saved_reg_count;
+            for ( size_t i = 0; i < need_to_save; i++ ) {
+                put_reg( AOC::Pop,
+                         to_hw_reg( caller_saved_reg_count + need_to_save - i ),
+                         ifi );
+            }
+        }
+    };
+    auto save_caller_registers = [&]( size_t used_regs_count, InFileInfo ifi ) {
+        size_t count = static_cast<size_t>( HwReg::count );
+        for ( size_t i = 0; i < count; i++ ) {
+            if ( auto itr = reg_states.find( static_cast<HwReg>( i + 1 ) );
+                 itr != reg_states.end() && itr->second.written_to &&
+                 is_caller_saved( itr->first ) ) {
+                put_src_reg( AOC::Push, itr->first, ifi );
+                itr->second.pushed_to_stack = true;
+            }
+        }
+    };
+    auto restore_caller_registers = [&]( size_t used_regs_count,
+                                         InFileInfo ifi ) {
+        size_t count = static_cast<size_t>( HwReg::count );
+        for ( size_t i = 0; i < count; i++ ) {
+            size_t idx = count - i;
+            if ( auto itr = reg_states.find( static_cast<HwReg>( idx ) );
+                 itr != reg_states.end() && itr->second.pushed_to_stack &&
+                 is_caller_saved( itr->first ) ) {
+                put_reg( AOC::Pop, itr->first, ifi );
+                itr->second.pushed_to_stack = false;
+            }
+        }
+    };
+
     // Add preamble
+    auto main_fn_label =
+        "fn" + to_string( mir.func_map[mir.main_function_symbol].label );
     put_str( AOC::Global, "main", no_ifi );
-    put_str( AOC::Global, "_main", no_ifi );
     put_empty( AOC::Text, no_ifi );
     put_label( "main", no_ifi );
-    put_str( AOC::Call, "_main", no_ifi );
+    put_str( AOC::Call, main_fn_label, no_ifi );
     put_reg_reg( AOC::Mov, HwReg::edi, HwReg::eax, no_ifi );
     put_reg_imm( AOC::MovConst, HwReg::eax, 0x3c, no_ifi );
     put_empty( AOC::Syscall, no_ifi );
-    put_label( "_main", no_ifi );
-
-    // Add main "function" preface
-    put_imm( AOC::Enter,
-             4 * ( mir.reg_count -
-                   std::min( mir.reg_count, virtual_stack_start_reg ) ),
-             no_ifi );
 
     // Add all instructions
 #ifdef AMS_CODE_LINE_COMMENTS
@@ -301,6 +365,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                 writeback_opt( instr.result, HwReg::eax, instr.ifi );
             }
         } else if ( instr.type == MT::Ret ) {
+            restore_callee_registers( curr_fn_info.max_register_used,
+                                      instr.ifi );
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             put_empty( AOC::Leave, instr.ifi );
             put_empty( AOC::Ret, instr.ifi );
@@ -311,6 +377,58 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_reg_imm( AOC::MovConst, HwReg::eax, 0, instr.ifi );
             put_reg_reg( AOC::Cmp, HwReg::eax, val, instr.ifi );
             put_str( AOC::Jz, "l" + to_string( instr.imm ), instr.ifi );
+        } else if ( instr.type == MT::Func ) {
+            // Assume clean state for all registers.
+            put_label( "fn" + to_string( instr.imm ), instr.ifi );
+            curr_fn_info = mir.func_map[mir.func_label_to_symbol[instr.imm]];
+            put_imm( AOC::Enter,
+                     4 * ( curr_fn_info.max_register_used -
+                           std::min( curr_fn_info.max_register_used,
+                                     virtual_stack_start_reg ) ),
+                     instr.ifi );
+            reg_states.clear();
+            loaded_parm_count = 0;
+            save_callee_registers( curr_fn_info.max_register_used, instr.ifi );
+        } else if ( instr.type == MT::Param ) {
+            size_t addr_offset = 16 + 8 * ( loaded_parm_count++ );
+            put_reg_imm( AOC::MovFromStack, HwReg::eax, addr_offset,
+                         instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
+        } else if ( instr.type == MT::Arg ) {
+            // First save registers
+            auto callee_fn_info =
+                mir.func_map[mir.func_label_to_symbol[instr.imm]];
+            if ( !saved_caller_registers ) {
+                saved_caller_registers = true;
+                save_caller_registers( callee_fn_info.max_register_used,
+                                       instr.ifi );
+            }
+
+            // Put argument on stack. Reverse order is already ensured.
+            auto val = make_available( instr.p0, instr.ifi );
+            put_src_reg( AOC::Push, val, instr.ifi );
+        } else if ( instr.type == MT::Call ) {
+            auto callee_fn_info =
+                mir.func_map[mir.func_label_to_symbol[instr.imm]];
+            put_str( AOC::Call, "fn" + to_string( instr.imm ), instr.ifi );
+
+            // Temporarily memorize result
+            put_reg_reg( AOC::Mov, HwReg::r10d, HwReg::eax, instr.ifi );
+
+            // Pop parameters from stack by decrementing esp
+            put_reg_reg( AOC::Mov64, HwReg::eax, HwReg::esp, instr.ifi );
+            put_reg_imm( AOC::MovConst64, HwReg::edx,
+                         callee_fn_info.arg_types.size() * 8, instr.ifi );
+            put_reg_reg( AOC::Sub64, HwReg::eax, HwReg::edx, instr.ifi );
+            put_reg_reg( AOC::Mov64, HwReg::esp, HwReg::eax, instr.ifi );
+
+            // Restore previously saved registers
+            restore_caller_registers( callee_fn_info.max_register_used,
+                                      instr.ifi );
+
+            // Result after registers were restored to prevent overwriting
+            writeback_opt( instr.result, HwReg::r10d, instr.ifi );
+            saved_caller_registers = false;
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(
@@ -364,10 +482,52 @@ void generate_asm_text_x86( CompilerState &state,
             return "%noreg";
         }
     };
+    auto to_reg_64_str = []( HwReg reg ) -> String {
+        switch ( reg ) {
+        case HwReg::eax:
+            return "%rax";
+        case HwReg::ebx:
+            return "%rbx";
+        case HwReg::ecx:
+            return "%rcx";
+        case HwReg::edx:
+            return "%rdx";
+        case HwReg::edi:
+            return "%rdi";
+        case HwReg::esi:
+            return "%rsi";
+        case HwReg::ebp:
+            return "%rbp";
+        case HwReg::esp:
+            return "%rsp";
+        case HwReg::r8d:
+            return "%r8";
+        case HwReg::r9d:
+            return "%r9";
+        case HwReg::r10d:
+            return "%r10";
+        case HwReg::r11d:
+            return "%r11";
+        case HwReg::r12d:
+            return "%r12";
+        case HwReg::r13d:
+            return "%r13";
+        case HwReg::r14d:
+            return "%r14";
+        case HwReg::r15d:
+            return "%r15";
+        default:
+            return "%noreg";
+        }
+    };
 
     auto make_reg_reg_op = [&]( const String &cmd, const Assembly_x86 &op ) {
         put_asm( cmd + " " + to_reg_str( op.src ) + ", " +
                  to_reg_str( op.dest ) );
+    };
+    auto make_reg_reg_op_64 = [&]( const String &cmd, const Assembly_x86 &op ) {
+        put_asm( cmd + " " + to_reg_64_str( op.src ) + ", " +
+                 to_reg_64_str( op.dest ) );
     };
 
     // Generate assembly code
@@ -386,12 +546,20 @@ void generate_asm_text_x86( CompilerState &state,
             put_asm( "call " + op.str );
         } else if ( op.opcode == AOC::Mov ) {
             make_reg_reg_op( "movl", op );
+        } else if ( op.opcode == AOC::Mov64 ) {
+            make_reg_reg_op_64( "movq", op );
         } else if ( op.opcode == AOC::MovConst ) {
             put_asm( "movl $" + to_string( op.imm ) + ", " +
                      to_reg_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovConst64 ) {
+            put_asm( "movq $" + to_string( op.imm ) + ", " +
+                     to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::MovFromStack ) {
             put_asm( "movl " + to_string( op.imm ) + "(%rbp), " +
                      to_reg_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovFromStack64 ) {
+            put_asm( "movq " + to_string( op.imm ) + "(%rbp), " +
+                     to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::MovToStack ) {
             put_asm( "movl " + to_reg_str( op.src ) + ", " +
                      to_string( op.imm ) + "(%rbp)" );
@@ -401,8 +569,12 @@ void generate_asm_text_x86( CompilerState &state,
             put_asm( "syscall" );
         } else if ( op.opcode == AOC::Add ) {
             make_reg_reg_op( "addl", op );
+        } else if ( op.opcode == AOC::Add64 ) {
+            make_reg_reg_op_64( "addq", op );
         } else if ( op.opcode == AOC::Sub ) {
             make_reg_reg_op( "subl", op );
+        } else if ( op.opcode == AOC::Sub64 ) {
+            make_reg_reg_op_64( "subq", op );
         } else if ( op.opcode == AOC::IMul ) {
             make_reg_reg_op( "imull", op );
         } else if ( op.opcode == AOC::IDiv ) {
@@ -433,6 +605,10 @@ void generate_asm_text_x86( CompilerState &state,
             make_reg_reg_op( "cmp", op );
         } else if ( op.opcode == AOC::Ret ) {
             put_asm( "ret" );
+        } else if ( op.opcode == AOC::Push ) {
+            put_asm( "push " + to_reg_64_str( op.src ) );
+        } else if ( op.opcode == AOC::Pop ) {
+            put_asm( "pop " + to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::Enter ) {
             put_asm( "enter $" + to_string( op.imm ) + ", $0" );
         } else if ( op.opcode == AOC::Leave ) {
