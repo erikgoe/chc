@@ -679,9 +679,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             if ( itr.get().type == AT::Paren &&
                  parent.type != AT::FunctionDef && parent.type != AT::Call ) {
                 auto node = itr.get();
-                if ( node.nodes && node.nodes->length() >= 1 ||
-                     node.nodes->any(
-                         []( auto &&n ) { return n.type == AT::CommaList; } ) )
+                if ( node.nodes && ( node.nodes->length() >= 1 ||
+                                     node.nodes->any( []( auto &&n ) {
+                                         return n.type == AT::CommaList;
+                                     } ) ) )
                     make_error_msg(
                         state,
                         "Comma-separated list only allowed in function "

@@ -134,9 +134,9 @@ public:
 
     String type;
     String fn_symbol;
-    Opt<SymbolId> *fn_symbol_id;
-    AstCont *params;
-    AstCont *stmts;
+    Opt<SymbolId> *fn_symbol_id = nullptr;
+    AstCont *params = nullptr;
+    AstCont *stmts = nullptr;
 };
 
 class Ret : public FacadeBase {
@@ -148,7 +148,7 @@ public:
         }
     }
 
-    AstNode *value;
+    AstNode *value = nullptr;
 };
 
 class Decl : public FacadeBase {
@@ -167,8 +167,8 @@ public:
 
     String type;
     String symbol;
-    Opt<SymbolId> *symbol_id;
-    AstNode *init;
+    Opt<SymbolId> *symbol_id = nullptr;
+    AstNode *init = nullptr;
 };
 
 class DeclUninit : public FacadeBase {
@@ -185,7 +185,7 @@ public:
 
     String type;
     String symbol;
-    Opt<SymbolId> *symbol_id;
+    Opt<SymbolId> *symbol_id = nullptr;
 };
 
 class Ident : public FacadeBase {
@@ -199,7 +199,7 @@ public:
     }
 
     String symbol;
-    Opt<SymbolId> *id;
+    Opt<SymbolId> *id = nullptr;
 };
 
 class Paren : public FacadeBase {
@@ -207,12 +207,12 @@ public:
     Paren( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::Paren;
         if ( matches ) {
-            if ( to_wrap.nodes )
-                children = &*to_wrap.nodes;
+            assert( to_wrap.nodes );
+            children = &*to_wrap.nodes;
         }
     }
 
-    AstCont *children;
+    AstCont *children = nullptr;
 };
 
 class Block : public FacadeBase {
@@ -220,12 +220,12 @@ public:
     Block( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::Block;
         if ( matches ) {
-            if ( to_wrap.nodes )
-                children = &*to_wrap.nodes;
+            assert( to_wrap.nodes );
+            children = &*to_wrap.nodes;
         }
     }
 
-    AstCont *children;
+    AstCont *children = nullptr;
 };
 
 class Type : public FacadeBase {
@@ -237,7 +237,7 @@ public:
         }
     }
 
-    String *type_name;
+    String *type_name = nullptr;
 };
 
 class IntConst : public FacadeBase {
@@ -281,8 +281,8 @@ public:
         type_str = map_bin_arith( new_type ) + "=";
     }
 
-    AstNode *lvalue;
-    AstNode *value;
+    AstNode *lvalue = nullptr;
+    AstNode *value = nullptr;
     ArithType type;
 };
 
@@ -306,7 +306,7 @@ public:
         }
     }
 
-    AstNode *rhs;
+    AstNode *rhs = nullptr;
     ArithType type;
 };
 
@@ -327,8 +327,8 @@ public:
         type_str = map_bin_arith( new_type );
     }
 
-    AstNode *lhs;
-    AstNode *rhs;
+    AstNode *lhs = nullptr;
+    AstNode *rhs = nullptr;
     ArithType type;
 };
 
@@ -344,9 +344,9 @@ public:
         }
     }
 
-    AstNode *lhs;
-    AstNode *mid;
-    AstNode *rhs;
+    AstNode *lhs = nullptr;
+    AstNode *mid = nullptr;
+    AstNode *rhs = nullptr;
 };
 
 class IfStmt : public FacadeBase {
@@ -377,7 +377,7 @@ public:
         itr.skip( 2 ).get() = false_stmt;
     }
 
-    AstNode *cond;
+    AstNode *cond = nullptr;
     AstNode true_stmt;
     AstNode false_stmt;
 };
@@ -393,8 +393,8 @@ public:
         }
     }
 
-    AstNode *cond;
-    AstNode *body;
+    AstNode *cond = nullptr;
+    AstNode *body = nullptr;
 };
 
 class ForLoop : public FacadeBase {
@@ -410,10 +410,10 @@ public:
         }
     }
 
-    AstNode *init;
-    AstNode *cond;
-    AstNode *step;
-    AstNode *body;
+    AstNode *init = nullptr;
+    AstNode *cond = nullptr;
+    AstNode *step = nullptr;
+    AstNode *body = nullptr;
 };
 
 class Call : public FacadeBase {
@@ -436,8 +436,8 @@ public:
     }
 
     String fn_symbol;
-    Opt<SymbolId> *fn_symbol_id;
-    AstCont *args;
+    Opt<SymbolId> *fn_symbol_id = nullptr;
+    AstCont *args = nullptr;
 };
 
 

@@ -234,7 +234,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             auto var = mir.next_var++;
             mir.instrs.put( MI{ MT::Param, var, 0, 0, 0, node.ifi } );
             auto decl = DeclUninit( itr.get() );
-            mir.var_map[decl.symbol_id->value()] = var;
+            if ( decl.symbol_id )
+                mir.var_map[decl.symbol_id->value()] = var;
             mir.type_of( var ) = str_to_type( state, decl.type, node.ifi );
             itr.skip_self( 1 );
         }
