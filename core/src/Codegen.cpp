@@ -659,7 +659,7 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::MovZeroExtend ) {
             put_asm( "movzbl %al, %eax" );
         } else if ( op.opcode == AOC::MovSymbolWithRip64 ) {
-            put_asm( "mov " + op.str + "(%rip), " + to_reg_str( op.dest ) );
+            put_asm( "movq " + op.str + "(%rip), " + to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::Syscall ) {
             put_asm( "syscall" );
         } else if ( op.opcode == AOC::Add ) {
