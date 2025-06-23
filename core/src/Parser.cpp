@@ -247,6 +247,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         InFileInfo open_at ) {
         AstNode ret;
         ret.nodes = std::make_shared<AstCont>();
+        ret.ifi = open_at;
         while ( itr ) {
             if ( itr.match( ast_tok( TT::Operator, "(" ) ) ) {
                 auto start_ifi = itr.consume().ifi;
