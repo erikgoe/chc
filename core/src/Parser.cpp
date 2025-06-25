@@ -178,6 +178,16 @@ bool is_call_ident( const AstNode &node ) {
                         node.tok->content ) != built_in_functions.end() );
 }
 
+EagerContainer<AstNode> &unwrap_comma_list_nodes( AstNode &node ) {
+    assert( node.nodes );
+    if ( node.type != AT::Paren )
+        return *node.nodes;
+    if ( node.nodes->length() != 1 ||
+         node.nodes->itr().get().type != AT::CommaList )
+        return *node.nodes;
+    return unwrap_comma_list_nodes( node.nodes->itr().get() );
+}
+
 AstNode make_merged_node( AT type, Token main_token,
                           const std::initializer_list<AstNode> &children ) {
     auto node = ast( type );
@@ -700,18 +710,17 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 auto node = itr.get();
                 auto &comma_list = node.nodes->itr().get();
                 if ( parent.type == AT::FunctionDef &&
-                     comma_list.type == AT::CommaList &&
-                     comma_list.nodes->any( []( const AstNode &n ) {
-                         return n.type != AT::DeclUninit;
-                     } ) ) {
+                     unwrap_comma_list_nodes( node ).any(
+                         []( const AstNode &n ) {
+                             return n.type != AT::DeclUninit;
+                         } ) ) {
                     make_error_msg( state,
                                     "Expected parameter declaration in "
                                     "function definition.",
                                     node.ifi, RetCode::SyntaxError );
                 }
                 if ( parent.type == AT::Call &&
-                     comma_list.type == AT::CommaList &&
-                     comma_list.nodes->any(
+                     unwrap_comma_list_nodes( node ).any(
                          []( const AstNode &n ) { return !is_expr( n ); } ) )
                     make_error_msg( state,
                                     "Expected parameter declaration in "
@@ -833,10 +842,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         global_itr.skip_self( 1 );
     }
     if ( !found_main ) {
-        make_error_msg(
-            state, "Expected global function with signature 'int main()'.",
-            InFileInfo{},
-            RetCode::SemanticError ); // TODO move this into SemanticAnalyzer
+        make_error_msg( state,
+                        "Expected global function with signature 'int main()'.",
+                        InFileInfo{}, RetCode::SemanticError );
     }
 
 // DEBUG
