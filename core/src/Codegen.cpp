@@ -261,6 +261,18 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             }
         }
     };
+    auto save_before_params_on_demand = [&]( Mir::FunctionInfo callee_fn_info,
+                                             InFileInfo ifi ) {
+        if ( !saved_caller_registers ) {
+            saved_caller_registers = true;
+            save_caller_registers( callee_fn_info.max_register_used, ifi );
+
+            // Alignment must be done before the parameters
+            i32 align_delta =
+                curr_frame_size + callee_fn_info.arg_types.size() * 8;
+            put_imm( AOC::AddSp, -16 + ( align_delta % 16 ), ifi );
+        }
+    };
 
     // Add preamble
     auto main_fn_label =
@@ -479,19 +491,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                          instr.ifi );
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Arg ) {
-            // First save registers
-            auto callee_fn_info =
-                mir.func_map[mir.func_label_to_symbol[instr.imm]];
-            if ( !saved_caller_registers ) {
-                saved_caller_registers = true;
-                save_caller_registers( callee_fn_info.max_register_used,
-                                       instr.ifi );
-
-                // Alignment must be done before the parameters
-                i32 align_delta =
-                    curr_frame_size + callee_fn_info.arg_types.size() * 8;
-                put_imm( AOC::AddSp, -16 + ( align_delta % 16 ), instr.ifi );
-            }
+            save_before_params_on_demand(
+                mir.func_map[mir.func_label_to_symbol[instr.imm]], instr.ifi );
 
             // Put argument on stack. Reverse order is already ensured.
             auto val = make_available( instr.p0, instr.ifi );
@@ -499,6 +500,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         } else if ( instr.type == MT::Call ) {
             auto callee_fn_info =
                 mir.func_map[mir.func_label_to_symbol[instr.imm]];
+            save_before_params_on_demand( callee_fn_info, instr.ifi );
 
             // Actual call with stack alignment
             put_str( AOC::Call, get_fn_label( instr.imm ), instr.ifi );
