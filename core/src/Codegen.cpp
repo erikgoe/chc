@@ -461,9 +461,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                 writeback_opt( instr.result, HwReg::eax, instr.ifi );
             }
         } else if ( instr.type == MT::Ret ) {
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
             restore_callee_registers( curr_fn_info.max_register_used,
                                       instr.ifi );
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
             put_empty( AOC::Leave, instr.ifi );
             put_empty( AOC::Ret, instr.ifi );
         } else if ( instr.type == MT::Jmp ) {
