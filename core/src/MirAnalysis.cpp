@@ -18,6 +18,7 @@ void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
     instr_uninits.resize( mir.instrs.length() + 1 );
     std::vector<Opt<bool>> instr_had_return; // For each instr
     instr_had_return.resize( mir.instrs.length() + 1 );
+    Opt<Mir::MirInstr> prev_instr;
 
     // Check only reachable code
     size_t i = 0;
@@ -57,6 +58,18 @@ void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
         instr_had_return[i] =
             instr_had_return[i].value_or( false ) || instr.type == MT::Ret;
 
+        // Check return statements between functions
+        if ( instr.type == MT::Func && prev_instr ) {
+            if ( !instr_had_return[i - 1].has_value() ||
+                 !instr_had_return[i - 1].value() ) {
+                make_error_msg( state, "Found path without return statement",
+                                prev_instr->ifi, RetCode::SemanticError );
+            }
+            // Reset, so that the state of the previous function does not leak
+            // into the state of the new function.
+            instr_had_return[i] = false;
+        }
+
         // Add successors
         if ( instr.type != MT::Jmp ) {
             // Next instr is reached
@@ -76,14 +89,16 @@ void use_before_init_and_return_check( CompilerState &state, Mir &mir ) {
                 instr_had_return[i].value();
         }
 
+        prev_instr = instr;
         i++;
     } );
 
     // Check for missing return statement
-    if ( !instr_had_return.empty() && ( !instr_had_return.back().has_value() ||
-                                        !instr_had_return.back().value() ) ) {
+    size_t last_return_op = mir.instrs.length() - 1;
+    if ( prev_instr && ( !instr_had_return[last_return_op].has_value() ||
+                         !instr_had_return[last_return_op].value() ) ) {
         make_error_msg( state, "Found path without return statement",
-                        InFileInfo{}, RetCode::SemanticError );
+                        prev_instr->ifi, RetCode::SemanticError );
     }
 }
 
