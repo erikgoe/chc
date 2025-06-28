@@ -708,7 +708,6 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             if ( itr.get().type == AT::Paren &&
                  itr.get().nodes->length() > 0 ) {
                 auto node = itr.get();
-                auto &comma_list = node.nodes->itr().get();
                 if ( parent.type == AT::FunctionDef &&
                      unwrap_comma_list_nodes( node ).any(
                          []( const AstNode &n ) {
