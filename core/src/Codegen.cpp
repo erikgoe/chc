@@ -508,7 +508,11 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // Temporarily memorize result
             put_reg_reg( AOC::Mov, HwReg::r10d, HwReg::eax, instr.ifi );
 
-            // Pop parameters from stack by decrementing esp
+            // Pop arguments from stack by decrementing esp
+            put_imm( AOC::AddSp, callee_fn_info.arg_types.size() * 8,
+                     instr.ifi );
+
+            // Remove alignment
             i32 align_delta =
                 curr_frame_size + callee_fn_info.arg_types.size() * 8;
             put_imm( AOC::AddSp, 16 - ( align_delta % 16 ), instr.ifi );
