@@ -6,6 +6,7 @@ namespace chc {
 
 struct SymbolDecl {
     SymbolId id;
+    size_t param_count = 0;
     InFileInfo ifi;
 };
 struct SemanticData {

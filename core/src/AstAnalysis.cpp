@@ -67,13 +67,14 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
     auto &func_map = semantic_data.func_map;
 
     // Add built-in functions
-    auto add_built_in = [&]( const String &symbol ) {
-        func_map[symbol] = SymbolDecl{ semantic_data.next_symbol++, no_ifi };
+    auto add_built_in = [&]( const String &symbol, size_t param_count ) {
+        func_map[symbol] =
+            SymbolDecl{ semantic_data.next_symbol++, param_count, no_ifi };
         semantic_data.build_in_symbols[symbol] = semantic_data.next_symbol - 1;
     };
-    add_built_in( "print" );
-    add_built_in( "read" );
-    add_built_in( "flush" );
+    add_built_in( "print", 1 );
+    add_built_in( "read", 0 );
+    add_built_in( "flush", 0 );
 
     // Iterate global nodes
     std::function<void( AstNode & )> analyze_node;
@@ -94,7 +95,8 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
             } else {
                 // New symbol
                 func_map[def.fn_symbol] =
-                    SymbolDecl{ semantic_data.next_symbol++, node.ifi };
+                    SymbolDecl{ semantic_data.next_symbol++,
+                                def.params->length(), node.ifi };
             }
             *def.fn_symbol_id = semantic_data.next_symbol -
                                 1; // Set the new symbol's id (if any)
@@ -146,7 +148,7 @@ void analyze_symbol_definitions( CompilerState &state,
                     // symbol
                     ps.symbols.push_back( *present_sym );
                     symbol_map[symbol] =
-                        SymbolDecl{ semantic_data.next_symbol++, ifi };
+                        SymbolDecl{ semantic_data.next_symbol++, 0, ifi };
 
                     // Actually specification forbids this shadowing...
                     make_error_msg( state,
@@ -159,7 +161,7 @@ void analyze_symbol_definitions( CompilerState &state,
             } else {
                 // New symbol
                 symbol_map[symbol] =
-                    SymbolDecl{ semantic_data.next_symbol++, ifi };
+                    SymbolDecl{ semantic_data.next_symbol++, 0, ifi };
                 ps.missing_symbols.push_back( symbol );
             }
             return semantic_data.next_symbol -
@@ -266,6 +268,12 @@ void analyze_symbol_definitions( CompilerState &state,
             if ( !*call.fn_symbol_id ) {
                 if ( func_map.find( call.fn_symbol ) != func_map.end() ) {
                     *call.fn_symbol_id = func_map[call.fn_symbol].id;
+
+                    if ( call.args->length() !=
+                         func_map[call.fn_symbol].param_count ) {
+                        make_error_msg( state, "Argument count mismatch",
+                                        node.ifi, RetCode::SemanticError );
+                    }
                 } else {
                     // Unknown symbol
                     make_error_msg( state, "Undefined identifier", node.ifi,
