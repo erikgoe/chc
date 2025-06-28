@@ -75,8 +75,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
 
     // Functions to generate single instructions
     auto put_comment = [&]( const String &content, const InFileInfo &ifi ) {
+        // Dirty-escape comments in the line
+        String tmp = content;
+        while ( tmp.find( "*/" ) != tmp.npos )
+            tmp.insert( tmp.find( "*/" ) + 1, " " );
+            
         assembly.put(
-            Assembly_x86{ AOC::Comment, no_reg, no_reg, 0, content, ifi } );
+            Assembly_x86{ AOC::Comment, no_reg, no_reg, 0, tmp, ifi } );
     };
     (void) put_comment; // Ignore unused in release build.
     auto put_reg_reg = [&]( AOC opcode, HwReg dest, HwReg src,
