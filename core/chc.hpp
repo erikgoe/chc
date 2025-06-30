@@ -11,5 +11,6 @@
 #include "src/Mir.cpp"
 #include "src/MirAnalysis.cpp"
 #include "src/Codegen.cpp"
+#include "src/AsmOptimizer.cpp"
 
 #endif

@@ -5,6 +5,7 @@
 #include "../include/chc/Mir.hpp"
 #include "../include/chc/MirAnalysis.hpp"
 #include "../include/chc/Codegen.hpp"
+#include "../include/chc/AsmOptimizer.hpp"
 
 namespace chc {
 
@@ -53,6 +54,7 @@ void Core::compile() {
             EagerContainer<Assembly_x86> asm_code;
             generate_code_x86( state, file_content, mir, semantic_data,
                                asm_code );
+            optimize_asm( state, asm_code );
             assembly += "/* FILE " + file_path + " */\n";
             generate_asm_text_x86( state, asm_code, assembly );
             assembly += "\n";
