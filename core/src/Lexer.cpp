@@ -29,13 +29,14 @@ bool is_ident_token( const String &s ) {
 bool is_operator_token( const String &s ) {
     if ( s.size() != 1 )
         return false;
-    return String( "+-*/%=(){};!~&|^<>?:," ).find( s.front() ) != String::npos;
+    return String( "+-*/%=(){}[].;!~&|^<>?:," ).find( s.front() ) !=
+           String::npos;
 }
 bool is_merged_operator( const String &s ) {
     return s == "&&" || s == "||" || s == "==" || s == "!=" || s == "<=" ||
-           s == ">=" || s == "<<" || s == ">>" || s == "+=" || s == "-=" ||
-           s == "*=" || s == "/=" || s == "%=" || s == "&=" || s == "|=" ||
-           s == "^=" || s == "<<=" || s == ">>=";
+           s == ">=" || s == "<<" || s == ">>" || s == "->" || s == "+=" ||
+           s == "-=" || s == "*=" || s == "/=" || s == "%=" || s == "&=" ||
+           s == "|=" || s == "^=" || s == "<<=" || s == ">>=";
 }
 
 EagerContainer<Token> make_lexer( CompilerState &state, const String &text ) {

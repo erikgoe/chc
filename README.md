@@ -1,5 +1,5 @@
 # Compiler for lecture "Compiler Design"
-My implementation of a compiler for a C0-like language, called L3. This compiler was created as submission for the lab exercise of the teaching course "Compiler Design" by André Platzer.
+My implementation of a compiler for a C-like language, called L4. This compiler was created as submission for the lab exercise of the teaching course "Compiler Design" by André Platzer.
 
 ## Features
 * Well... it compiles the language and outputs x86-64 assembly.

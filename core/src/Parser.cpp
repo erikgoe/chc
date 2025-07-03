@@ -14,6 +14,8 @@ String AstNode::get_type_name() const {
         return "GlobalScope";
     case AstNode::Type::FunctionDef:
         return "FunctionDef";
+    case AstNode::Type::StructDef:
+        return "StructDef";
     case AstNode::Type::Stmt:
         return "Stmt";
     case AstNode::Type::Ret:
@@ -30,14 +32,26 @@ String AstNode::get_type_name() const {
         return "Paren";
     case AstNode::Type::Block:
         return "Block";
+    case AstNode::Type::Bracket:
+        return "Bracket";
     case AstNode::Type::IntConst:
         return "IntConst";
+    case AstNode::Type::BoolConst:
+        return "BoolConst";
+    case AstNode::Type::NullConst:
+        return "NullConst";
     case AstNode::Type::BinOp:
         return "BinOp";
     case AstNode::Type::UniOp:
         return "UniOp";
-    case AstNode::Type::Type:
-        return "Type";
+    case AstNode::Type::PrimType:
+        return "PrimType";
+    case AstNode::Type::PtrType:
+        return "PtrType";
+    case AstNode::Type::ArrayType:
+        return "ArrayType";
+    case AstNode::Type::StructType:
+        return "StructType";
     case AstNode::Type::IfStmt:
         return "IfStmt";
     case AstNode::Type::IfElseStmt:
@@ -50,14 +64,22 @@ String AstNode::get_type_name() const {
         return "ContinueStmt";
     case AstNode::Type::BreakStmt:
         return "BreakStmt";
-    case AstNode::Type::BoolConst:
-        return "BoolConst";
     case AstNode::Type::TernOp:
         return "TernOp";
     case AstNode::Type::Call:
         return "Call";
+    case AstNode::Type::AllocCall:
+        return "AllocCall";
     case AstNode::Type::CommaList:
         return "CommaList";
+    case AstNode::Type::MemberAccess:
+        return "MemberAccess";
+    case AstNode::Type::IndirectAccess:
+        return "IndirectAccess";
+    case AstNode::Type::ArrayAccess:
+        return "ArrayAccess";
+    case AstNode::Type::PtrDeref:
+        return "PtrDeref";
     default:
         return "Unknown";
     }
@@ -139,20 +161,26 @@ bool is_expr( const AstNode &node ) {
            ( node.type == AT::BinOp &&
              !is_asnop_operator( node.tok->content ) ) ||
            node.type == AT::UniOp || node.type == AT::BoolConst ||
-           node.type == AT::TernOp || node.type == AT::Call;
+           node.type == AT::TernOp || node.type == AT::Call ||
+           node.type == AT::AllocCall;
 }
 
 bool is_stmt_body( const AstNode &node ) {
     return node.type == AT::Decl || node.type == AT::DeclUninit ||
            node.type == AT::AsnOp || node.type == AT::Ret ||
            node.type == AT::BreakStmt || node.type == AT::ContinueStmt ||
-           node.type == AT::Call;
+           node.type == AT::Call || node.type == AT::AllocCall;
 }
 
 bool is_lvalue( const AstNode &node ) {
     return node.type == AT::Ident ||
            ( node.type == AT::Paren && node.nodes->not_empty() &&
              is_lvalue( *node.nodes->first() ) );
+}
+
+bool is_type( const AstNode &node ) {
+    return node.type == AT::PrimType || node.type == AT::PtrType ||
+           node.type == AT::ArrayType || node.type == AT::StructType;
 }
 
 bool is_stmt( const AstNode &node ) {
@@ -171,7 +199,8 @@ bool is_comma_list_element( const AstNode &node ) {
 }
 
 bool is_call_ident( const AstNode &node ) {
-    std::vector<String> built_in_functions = { "print", "read", "flush" };
+    std::vector<String> built_in_functions = { "print", "read", "flush",
+                                               "alloc", "alloc_array" };
     return node.type == AT::Ident ||
            ( node.type == AT::Token && node.tok->type == TT::Keyword &&
              std::find( built_in_functions.begin(), built_in_functions.end(),
@@ -244,6 +273,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         } else if ( t.type == TT::Keyword &&
                     ( t.content == "true" || t.content == "false" ) ) {
             return AstNode{ AT::BoolConst, {}, t, {}, t.ifi };
+        } else if ( t.type == TT::Keyword && t.content == "NULL" ) {
+            return AstNode{ AT::NullConst, {}, t, {}, t.ifi };
         } else if ( t.type == TT::Identifier ) {
             return AstNode{ AT::Ident, {}, t, {}, t.ifi };
         } else {
@@ -269,6 +300,11 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 auto child = parse_parens( itr, "}", start_ifi );
                 child.type = AT::Block;
                 ret.nodes->put( child );
+            } else if ( itr.match( ast_tok( TT::Operator, "[" ) ) ) {
+                auto start_ifi = itr.consume().ifi;
+                auto child = parse_parens( itr, "]", start_ifi );
+                child.type = AT::Bracket;
+                ret.nodes->put( child );
             } else if ( !closing_bracket.empty() &&
                         itr.match(
                             ast_tok( TT::Operator, closing_bracket ) ) ) {
@@ -277,7 +313,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             } else {
                 auto n = itr.consume();
                 if ( n.tok &&
-                     ( n.tok->content == ")" || n.tok->content == "}" ) ) {
+                     ( n.tok->content == ")" || n.tok->content == "}" ||
+                       n.tok->content == "]" ) ) {
                     make_error_msg( state, "Unmatched closing bracket.", n.ifi,
                                     RetCode::SyntaxError );
                     return ret;
@@ -302,13 +339,49 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto type_ident = itr.get();
-            if ( parent.type == AT::Type )
+            if ( parent.type == AT::PrimType )
                 return false;
             if ( type_ident.match( ast_tok( TT::Keyword, "int" ) ) ||
                  type_ident.match( ast_tok( TT::Keyword, "bool" ) ) ) {
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::Type, *type_ident.tok,
+                itr.get() = make_merged_node( AT::PrimType, *type_ident.tok,
                                               { type_ident } );
+                return true;
+            }
+            return false;
+        } );
+
+    // Other types
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto lhs = itr.get();
+            auto rhs = itr.skip( 1 ).get_or( ast( AT::None ) );
+            if ( parent.type != AT::GlobalScope &&
+                 itr.match( ast_tok( TT::Keyword, "struct" ),
+                            ast( AT::Ident ) ) ) {
+                // Remove one consumed element.
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::StructType, *rhs.tok, { rhs } );
+                return true;
+            }
+            if ( is_type( lhs ) && rhs.tok->content == "*" ) {
+                // Remove one consumed element.
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::PtrType, *lhs.tok, { lhs } );
+                return true;
+            }
+            if ( is_type( lhs ) && rhs.type == AT::Bracket &&
+                 rhs.nodes->empty() ) {
+                // Remove two consumed elements.
+                itr.erase_self();
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::ArrayType, *lhs.tok, { lhs } );
                 return true;
             }
             return false;
@@ -333,32 +406,71 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // Function call
+    // Function call & access-operators
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            if ( parent.type == AT::GlobalScope )
-                return false; // Don't interpret function definitions as calls
-
-            auto head = itr.get();
-            auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
-            if ( is_call_ident( head ) && paren.type == AT::Paren ) {
+            auto lhs = itr.get();
+            auto mid = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto rhs = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( is_call_ident( lhs ) && mid.type == AT::Paren ) {
                 // Is "<ident> ( ... )"
+                if ( parent.type == AT::GlobalScope )
+                    return false; // Don't interpret function definitions as
+                                  // calls
+
                 // Remove one consumed element.
                 itr.erase_self();
 
-                if ( head.type == AT::Token ) {
-                    // Special functions were parsed like keywords.
-                    head.type = AT::Ident;
+                if ( lhs.type == AT::Token ) {
+                    if ( lhs.tok->content == "alloc" ||
+                         lhs.tok->content == "alloc_array" ) {
+                        // Is special function with type-parameter
+                        itr.get() = make_merged_node( AT::AllocCall, *lhs.tok,
+                                                      { lhs, mid } );
+                        return true;
+                    } else {
+                        // Special functions were parsed like keywords.
+                        lhs.type = AT::Ident;
+                    }
                 }
 
                 // Replace with merged token
                 itr.get() =
-                    make_merged_node( AT::Call, *head.tok, { head, paren } );
+                    make_merged_node( AT::Call, *lhs.tok, { lhs, mid } );
+                return true;
+            } else if ( is_expr( lhs ) && mid.type == AT::Token &&
+                        mid.tok->content == "." && rhs.type == AT::Ident ) {
+                // Is "<expr>.<ident>"
+                // Remove two consumed elements.
+                itr.erase_self();
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::MemberAccess, *lhs.tok,
+                                              { lhs, rhs } );
+                return true;
+            } else if ( is_expr( lhs ) && mid.type == AT::Token &&
+                        mid.tok->content == "->" && rhs.type == AT::Ident ) {
+                // Is "<expr>.<ident>"
+                // Remove two consumed elements.
+                itr.erase_self();
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::IndirectAccess, *lhs.tok,
+                                              { lhs, rhs } );
+                return true;
+            } else if ( is_expr( lhs ) && mid.type == AT::Bracket ) {
+                // Is "<expr>.<ident>"
+                // Remove one consumed elements.
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() =
+                    make_merged_node( AT::ArrayAccess, *lhs.tok, { lhs, mid } );
                 return true;
             }
             return false;
         } );
+
 
     // Prefix operators
     apply_pass_recursively_from_right(
@@ -375,6 +487,13 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     itr.erase_self();
                     // Replace with merged token
                     itr.get() = make_merged_node( AT::UniOp, *op.tok, { rhs } );
+                    return true;
+                } else if ( op.match( ast_tok( TT::Operator, "*" ) ) ) {
+                    // Remove one consumed element.
+                    itr.erase_self();
+                    // Replace with merged token
+                    itr.get() =
+                        make_merged_node( AT::PtrDeref, *op.tok, { rhs } );
                     return true;
                 }
             }
@@ -482,16 +601,16 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto lhs = itr.get();
             auto opr = itr.skip( 1 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast( AT::Type ),
-                            ast_with_tok( AT::AsnOp, TT::Operator, "=",
-                                          ast( AT::Ident ) ) ) ) {
-                // Is "int <ident> = <expr>"
+            if ( is_type( lhs ) &&
+                 itr.skip( 1 ).match( ast_with_tok(
+                     AT::AsnOp, TT::Operator, "=", ast( AT::Ident ) ) ) ) {
+                // Is "<type> <ident> = <expr>"
                 // Remove one consumed element.
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() = make_merged_node( AT::Decl, *lhs.tok, { opr } );
                 return true;
-            } else if ( itr.match( ast( AT::Type ), ast( AT::Ident ) ) ) {
+            } else if ( is_type( lhs ) && opr.type == AT::Ident ) {
                 // Is "<type> <ident>"
                 // Remove one consumed element.
                 itr.erase_self();
@@ -647,6 +766,29 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
+    // Struct definitions
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( parent.type != AT::GlobalScope )
+                return false; // Only allow struct definitions in global scope
+            auto keyword = itr.get();
+            auto head = itr.skip( 1 ).get_or( ast( AT::None ) );
+            auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
+            if ( itr.match( ast_tok( TT::Keyword, "struct" ), ast( AT::Ident ),
+                            ast( AT::Block ) ) ) {
+                // Is "struct <ident> { ... }"
+                // Remove two consumed elements.
+                itr.erase_self();
+                itr.erase_self();
+                // Replace with merged token
+                itr.get() = make_merged_node( AT::StructDef, *head.tok,
+                                              { head, block } );
+                return true;
+            }
+            return false;
+        } );
+
     // Function definitions
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
@@ -679,7 +821,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( itr.get().type == AT::Paren && parent.type != AT::ForLoop &&
-                 parent.type != AT::FunctionDef && parent.type != AT::Call ) {
+                 parent.type != AT::FunctionDef && parent.type != AT::Call &&
+                 parent.type != AT::AllocCall ) {
                 auto node = itr.get();
                 if ( !node.nodes || node.nodes->length() != 1 ||
                      !is_expr( node.nodes->itr().get() ) )
@@ -688,7 +831,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                                     node.ifi, RetCode::SyntaxError );
             }
             if ( itr.get().type == AT::Paren &&
-                 parent.type != AT::FunctionDef && parent.type != AT::Call ) {
+                 parent.type != AT::FunctionDef && parent.type != AT::Call &&
+                 parent.type != AT::AllocCall ) {
                 auto node = itr.get();
                 if ( node.nodes->any(
                          []( auto &&n ) { return n.type == AT::CommaList; } ) )
@@ -720,11 +864,34 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 }
                 if ( parent.type == AT::Call &&
                      unwrap_comma_list_nodes( node ).any(
-                         []( const AstNode &n ) { return !is_expr( n ); } ) )
+                         []( const AstNode &n ) { return !is_expr( n ); } ) ) {
                     make_error_msg( state,
                                     "Expected parameter declaration in "
                                     "function call.",
                                     node.ifi, RetCode::SyntaxError );
+                }
+                if ( parent.type == AT::AllocCall ) {
+                    auto &comma_list = unwrap_comma_list_nodes( node );
+                    auto fn_ident = parent.nodes->itr().get().tok->content;
+                    if ( fn_ident == "alloc_array" &&
+                         ( comma_list.length() != 2 ||
+                           !is_type( comma_list.itr().get() ) ||
+                           !is_expr( comma_list.itr().skip( 1 ).get() ) ) ) {
+                        make_error_msg( state,
+                                        "Expected parameters '(type, expr)' in "
+                                        "'alloc_array'"
+                                        "function call.",
+                                        node.ifi, RetCode::SyntaxError );
+                    } else if ( fn_ident == "alloc" &&
+                                ( comma_list.length() != 1 ||
+                                  !is_type( comma_list.itr().get() ) ) ) {
+                        make_error_msg(
+                            state,
+                            "Expected parameters '(type)' in 'alloc'"
+                            "function call.",
+                            node.ifi, RetCode::SyntaxError );
+                    }
+                }
             }
             return false;
         } );
@@ -806,6 +973,24 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                                     "Expected statement in block. Did you "
                                     "forget a semicolon?",
                                     node.ifi, RetCode::SyntaxError );
+            }
+            return false;
+        } );
+
+    // Check for Fields in struct definitions
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( parent.type == AT::StructDef ) {
+                auto block_itr =
+                    itr.get().nodes->itr().skip( 1 ).get().nodes->itr();
+                while ( block_itr ) {
+                    if ( block_itr.get().type != AT::DeclUninit ) {
+                        make_error_msg(
+                            state, "Expected field in struct block.",
+                            block_itr.get().ifi, RetCode::SyntaxError );
+                    }
+                }
             }
             return false;
         } );

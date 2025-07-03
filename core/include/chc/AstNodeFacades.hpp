@@ -228,10 +228,10 @@ public:
     AstCont *children = nullptr;
 };
 
-class Type : public FacadeBase {
+class PrimType : public FacadeBase {
 public:
-    Type( AstNode &to_wrap ) {
-        matches = to_wrap.type == AstNode::Type::Type;
+    PrimType( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::PrimType;
         if ( matches ) {
             type_name = &to_wrap.tok->content;
         }
