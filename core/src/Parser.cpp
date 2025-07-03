@@ -1013,16 +1013,20 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     auto global_itr = full_graph.itr();
     while ( global_itr ) {
         auto node = global_itr.get();
-        if ( node.type != AT::FunctionDef ) {
-            make_error_msg( state, "Expected function in global scope.",
-                            node.ifi, RetCode::SyntaxError );
+        if ( node.type != AT::FunctionDef && node.type != AT::StructDef ) {
+            make_error_msg(
+                state,
+                "Expected function or struct definition in global scope.",
+                node.ifi, RetCode::SyntaxError );
             return {};
         }
-        auto fn_children = node.nodes->itr();
-        if ( fn_children.get().nodes->itr().get().tok->content == "main" &&
-             fn_children.get().tok->content == "int" &&
-             fn_children.skip( 1 ).get().nodes->empty() )
-            found_main = true;
+        if ( node.type != AT::FunctionDef ) {
+            auto fn_children = node.nodes->itr();
+            if ( fn_children.get().nodes->itr().get().tok->content == "main" &&
+                 fn_children.get().tok->content == "int" &&
+                 fn_children.skip( 1 ).get().nodes->empty() )
+                found_main = true;
+        }
         global_itr.skip_self( 1 );
     }
     if ( !found_main ) {
