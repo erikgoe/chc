@@ -440,6 +440,63 @@ public:
     AstCont *args = nullptr;
 };
 
+class MemberAccess : public FacadeBase {
+public:
+    MemberAccess( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::MemberAccess;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            lhs = &itr.get();
+            rhs = &itr.skip( 1 ).get();
+        }
+    }
+
+    AstNode *lhs = nullptr;
+    AstNode *rhs = nullptr;
+};
+
+class IndirectAccess : public FacadeBase {
+public:
+    IndirectAccess( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::IndirectAccess;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            lhs = &itr.get();
+            rhs = &itr.skip( 1 ).get();
+        }
+    }
+
+    AstNode *lhs = nullptr;
+    AstNode *rhs = nullptr;
+};
+
+class ArrayAccess : public FacadeBase {
+public:
+    ArrayAccess( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::ArrayAccess;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            lhs = &itr.get();
+            idx = &itr.skip( 1 ).get().nodes->itr().get();
+        }
+    }
+
+    AstNode *lhs = nullptr;
+    AstNode *idx = nullptr;
+};
+
+class PtrDeref : public FacadeBase {
+public:
+    PtrDeref( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::PtrDeref;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            ptr = &itr.get();
+        }
+    }
+
+    AstNode *ptr = nullptr;
+};
 
 } // namespace AstNodeFacades
 
