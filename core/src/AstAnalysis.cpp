@@ -360,10 +360,36 @@ void analyze_symbol_definitions( CompilerState &state,
     analyze_node( root_node );
 }
 
+void check_for_recursive_struct_types( CompilerState &state,
+                                       SemanticData &semantic_data ) {
+    auto &struct_map = semantic_data.struct_map;
+    for ( auto &s : struct_map ) {
+        std::function<void( StructDecl & )> recurse_check;
+        recurse_check = [&]( StructDecl &def ) {
+            for ( auto &f : def.fields ) {
+                if ( f.first->type == TypeSpecifier::Type::Struct ) {
+                    if ( f.first->name == s.first ) {
+                        make_error_msg(
+                            state, "Found recursive struct type definition.",
+                            s.second.ifi, RetCode::SemanticError );
+                        return;
+                    }
+                    recurse_check( struct_map[s.first] );
+                }
+            }
+        };
+
+        recurse_check( s.second );
+    }
+}
+
 void basic_semantic_checks( CompilerState &state, SemanticData &semantic_data,
                             AstNode &root_node ) {
     // First analyze symbols
     analyze_symbol_definitions( state, semantic_data, root_node );
+
+    // Additional checks
+    check_for_recursive_struct_types( state, semantic_data );
 
     // Check if all symbols were matched
     if ( state.success ) {
