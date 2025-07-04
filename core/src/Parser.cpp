@@ -608,7 +608,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 // Remove one consumed element.
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::Decl, *lhs.tok, { opr } );
+                itr.get() =
+                    make_merged_node( AT::Decl, *lhs.tok, { lhs, opr } );
                 return true;
             } else if ( is_type( lhs ) && opr.type == AT::Ident ) {
                 // Is "<type> <ident>"
@@ -616,7 +617,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() =
-                    make_merged_node( AT::DeclUninit, *lhs.tok, { opr } );
+                    make_merged_node( AT::DeclUninit, *lhs.tok, { lhs, opr } );
                 return true;
             } else if ( itr.match( ast_tok( TT::Keyword, "return" ) ) &&
                         is_expr( opr ) ) {
@@ -669,7 +670,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto stmt = itr.get();
             auto semicolon = itr.skip( 1 ).get_or( ast( AT::None ) );
             if ( itr.skip( 1 ).match( ast_tok( TT::Operator, ";" ) ) &&
-                 is_stmt_body( stmt ) ) {
+                 is_stmt_body( stmt ) && parent.type != AT::GlobalScope ) {
                 // Is "<stmt> ;"
                 // Remove one consumed element.
                 itr.erase_self();
@@ -776,9 +777,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto head = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
             if ( itr.match( ast_tok( TT::Keyword, "struct" ), ast( AT::Ident ),
-                            ast( AT::Block ) ) ) {
+                            ast( AT::Block ), ast_tok( TT::Operator, ";" ) ) ) {
                 // Is "struct <ident> { ... }"
-                // Remove two consumed elements.
+                // Remove three consumed elements.
+                itr.erase_self();
                 itr.erase_self();
                 itr.erase_self();
                 // Replace with merged token
@@ -800,15 +802,16 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             auto paren = itr.skip( 1 ).get_or( ast( AT::None ) );
             auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
             if ( itr.match( ast( AT::DeclUninit ), ast( AT::Paren ),
-                            ast( AT::Block ) ) ) {
+                            ast( AT::Block ) ) &&
+                 head.nodes->itr().get().type != AT::StructDef ) {
                 // Is "int <ident> ( ... ) { ... }"
                 // Remove two consumed elements.
                 itr.erase_self();
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::FunctionDef,
-                                              *head.nodes->first()->get().tok,
-                                              { head, paren, block } );
+                itr.get() = make_merged_node(
+                    AT::FunctionDef, *head.nodes->itr().skip().get().tok,
+                    { head, paren, block } );
                 return true;
             }
             return false;
@@ -861,6 +864,14 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                                     "Expected parameter declaration in "
                                     "function definition.",
                                     node.ifi, RetCode::SyntaxError );
+                }
+                if ( parent.type == AT::FunctionDef &&
+                     unwrap_comma_list_nodes( node ).any(
+                         []( const AstNode &n ) {
+                             return n.type == AT::StructType;
+                         } ) ) {
+                    make_error_msg( state, "Parameters must be small types.",
+                                    node.ifi, RetCode::SemanticError );
                 }
                 if ( parent.type == AT::Call &&
                      unwrap_comma_list_nodes( node ).any(

@@ -110,6 +110,43 @@ AstNode &unwrap_paren( AstNode &node ) {
     }
 }
 
+class TypeSpecifier : public FacadeBase {
+public:
+    TypeSpecifier() {}
+    TypeSpecifier( AstNode &node ) {
+        matches = true;
+        if ( node.type == AT::PrimType ) {
+            type = Type::Prim;
+            name = node.tok->content;
+        } else if ( node.type == AT::PtrType ) {
+            type = Type::Ptr;
+            sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
+        } else if ( node.type == AT::ArrayType ) {
+            type = Type::Array;
+            sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
+        } else if ( node.type == AT::StructType ) {
+            type = Type::Struct;
+            name = node.tok->content;
+            struct_symbol_id = &node.symbol_id;
+        } else {
+            matches = false;
+        }
+    }
+    bool operator==( const TypeSpecifier &other ) const {
+        return type == other.type && ( !sub || *sub == *other.sub ) &&
+               name == other.name;
+    }
+    bool operator!=( const TypeSpecifier &other ) const {
+        return !( *this == other );
+    }
+
+    enum class Type { None, Prim, Ptr, Array, Struct, count } type = Type::None;
+    std::shared_ptr<TypeSpecifier> sub;
+    String name;
+    Opt<SymbolId> *struct_symbol_id = nullptr;
+};
+using ShrTypeS = std::shared_ptr<TypeSpecifier>;
+
 class FunctionDef : public FacadeBase {
 public:
     FunctionDef( AstNode &to_wrap ) {
@@ -117,9 +154,9 @@ public:
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
             auto decl_itr = itr.get().nodes->itr();
-            type = itr.get().tok->content;
-            fn_symbol = decl_itr.get().tok->content;
-            fn_symbol_id = &decl_itr.get().symbol_id;
+            type = std::make_shared<TypeSpecifier>( decl_itr.get() );
+            fn_symbol = decl_itr.skip( 1 ).get().tok->content;
+            fn_symbol_id = &decl_itr.skip( 1 ).get().symbol_id;
             auto &paren_content = itr.skip( 1 ).get().nodes;
             if ( paren_content->empty() ||
                  paren_content->itr().get().type != AstNode::Type::CommaList ) {
@@ -132,11 +169,28 @@ public:
         }
     }
 
-    String type;
+    ShrTypeS type;
     String fn_symbol;
     Opt<SymbolId> *fn_symbol_id = nullptr;
     AstCont *params = nullptr;
     AstCont *stmts = nullptr;
+};
+
+class StructDef : public FacadeBase {
+public:
+    StructDef( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::StructDef;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            struct_symbol = itr.get().tok->content;
+            struct_symbol_id = &itr.get().symbol_id;
+            fields = &*itr.skip( 2 ).get().nodes;
+        }
+    }
+
+    String struct_symbol;
+    Opt<SymbolId> *struct_symbol_id = nullptr;
+    AstCont *fields = nullptr;
 };
 
 class Ret : public FacadeBase {
@@ -156,16 +210,16 @@ public:
     Decl( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::Decl;
         if ( matches ) {
-            type = to_wrap.tok->content;
             auto itr = to_wrap.nodes->itr();
-            auto asnop_itr = itr.get().nodes->itr();
+            type = std::make_shared<TypeSpecifier>( itr.get() );
+            auto asnop_itr = itr.skip( 1 ).get().nodes->itr();
             symbol = asnop_itr.get().tok->content;
             symbol_id = &asnop_itr.get().symbol_id;
             init = &asnop_itr.skip( 1 ).get();
         }
     }
 
-    String type;
+    ShrTypeS type;
     String symbol;
     Opt<SymbolId> *symbol_id = nullptr;
     AstNode *init = nullptr;
@@ -176,14 +230,14 @@ public:
     DeclUninit( AstNode &to_wrap ) {
         matches = to_wrap.type == AstNode::Type::DeclUninit;
         if ( matches ) {
-            type = to_wrap.tok->content;
             auto itr = to_wrap.nodes->itr();
-            symbol = itr.get().tok->content;
-            symbol_id = &itr.get().symbol_id;
+            type = std::make_shared<TypeSpecifier>( itr.get() );
+            symbol = itr.skip( 1 ).get().tok->content;
+            symbol_id = &itr.skip( 1 ).get().symbol_id;
         }
     }
 
-    String type;
+    ShrTypeS type;
     String symbol;
     Opt<SymbolId> *symbol_id = nullptr;
 };

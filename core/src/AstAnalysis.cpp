@@ -65,6 +65,7 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
                              AstNode &root_node ) {
     InFileInfo no_ifi;
     auto &func_map = semantic_data.func_map;
+    auto &struct_map = semantic_data.struct_map;
 
     // Add built-in functions
     auto add_built_in = [&]( const String &symbol, size_t param_count ) {
@@ -100,6 +101,42 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
             }
             *def.fn_symbol_id = semantic_data.next_symbol -
                                 1; // Set the new symbol's id (if any)
+        } else if ( auto def = StructDef( node ) ) {
+            // Struct definition implies declaration
+
+            // Search for existing symbol
+            auto present_sym = struct_map.find( def.struct_symbol );
+            if ( present_sym != struct_map.end() ) {
+                // Already declared in global scope
+                make_error_msg( state,
+                                "Symbol already defined in global scope.",
+                                node.ifi, RetCode::SemanticError );
+                make_info_msg( state, "Previously defined here.",
+                               present_sym->second.ifi );
+            } else {
+                // New symbol
+                std::vector<std::pair<ShrTypeS, String>> fields;
+                auto f_itr = def.fields->itr();
+                while ( f_itr ) {
+                    auto decl = DeclUninit( f_itr.get() );
+                    if ( std::find_if( fields.begin(), fields.end(),
+                                       [&]( auto &&pair ) {
+                                           return pair.second == decl.symbol;
+                                       } ) != fields.end() ) {
+                        // Already declared in this struct
+                        make_error_msg( state, "Field was already declared.",
+                                        f_itr.get().ifi,
+                                        RetCode::SemanticError );
+                    }
+                    fields.push_back(
+                        std::make_pair( decl.type, decl.symbol ) );
+                }
+
+                struct_map[def.struct_symbol] =
+                    StructDecl{ semantic_data.next_symbol++, fields, node.ifi };
+            }
+            *def.struct_symbol_id = semantic_data.next_symbol -
+                                    1; // Set the new symbol's id (if any)
         } else if ( node.type == AT::GlobalScope ) {
             // Recurse global scope
             if ( node.nodes ) {
@@ -121,6 +158,7 @@ void analyze_symbol_definitions( CompilerState &state,
                                  AstNode &root_node ) {
     auto &symbol_map = semantic_data.symbol_map;
     auto &func_map = semantic_data.func_map;
+    auto &struct_map = semantic_data.struct_map;
     std::deque<SymbolStackEntry> prev_stack;
     prev_stack.push_back( SymbolStackEntry{ semantic_data.next_symbol } );
 
@@ -293,6 +331,17 @@ void analyze_symbol_definitions( CompilerState &state,
             while ( itr ) {
                 analyze_node( itr.get() );
                 itr.skip_self( 1 );
+            }
+        } else if ( auto type_spec = TypeSpecifier( node ) ) {
+            if ( type_spec.type == TypeSpecifier::Type::Struct ) {
+                // Check struct symbol
+                if ( struct_map.find( type_spec.name ) != struct_map.end() ) {
+                    *type_spec.struct_symbol_id = struct_map[type_spec.name].id;
+                } else {
+                    // Unknown symbol
+                    make_error_msg( state, "Undefined identifier", node.ifi,
+                                    RetCode::SemanticError );
+                }
             }
         } else {
             // Normal nodes
