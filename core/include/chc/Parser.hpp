@@ -42,7 +42,7 @@ struct AstNode {
         Call,
         AllocCall,
         CommaList,
-        MemberAccess,
+        FieldAccess,
         IndirectAccess,
         ArrayAccess,
         PtrDeref,

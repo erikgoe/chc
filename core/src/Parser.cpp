@@ -72,8 +72,8 @@ String AstNode::get_type_name() const {
         return "AllocCall";
     case AstNode::Type::CommaList:
         return "CommaList";
-    case AstNode::Type::MemberAccess:
-        return "MemberAccess";
+    case AstNode::Type::FieldAccess:
+        return "FieldAccess";
     case AstNode::Type::IndirectAccess:
         return "IndirectAccess";
     case AstNode::Type::ArrayAccess:
@@ -446,8 +446,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::MemberAccess, *lhs.tok,
-                                              { lhs, rhs } );
+                itr.get() =
+                    make_merged_node( AT::FieldAccess, *lhs.tok, { lhs, rhs } );
                 return true;
             } else if ( is_expr( lhs ) && mid.type == AT::Token &&
                         mid.tok->content == "->" && rhs.type == AT::Ident ) {
@@ -992,15 +992,15 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
-            if ( parent.type == AT::StructDef ) {
-                auto block_itr =
-                    itr.get().nodes->itr().skip( 1 ).get().nodes->itr();
+            if ( itr.get().type == AT::Block && parent.type == AT::StructDef ) {
+                auto block_itr = itr.get().nodes->itr();
                 while ( block_itr ) {
                     if ( block_itr.get().type != AT::DeclUninit ) {
                         make_error_msg(
                             state, "Expected field in struct block.",
                             block_itr.get().ifi, RetCode::SyntaxError );
                     }
+                    block_itr.skip_self( 1 );
                 }
             }
             return false;
@@ -1031,7 +1031,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 node.ifi, RetCode::SyntaxError );
             return {};
         }
-        if ( node.type != AT::FunctionDef ) {
+        if ( node.type == AT::FunctionDef ) {
             auto fn_children = node.nodes->itr();
             if ( fn_children.get().nodes->itr().get().tok->content == "main" &&
                  fn_children.get().tok->content == "int" &&

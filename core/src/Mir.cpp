@@ -73,33 +73,24 @@ String Mir::MirInstr::type_name() const {
         return "Arg";
     case Mir::MirInstr::Type::Call:
         return "Call";
+    case Mir::MirInstr::Type::TypeCast:
+        return "TypeCast";
+    case Mir::MirInstr::Type::FieldAccess:
+        return "FieldAccess";
+    case Mir::MirInstr::Type::ReadMem:
+        return "ReadMem";
+    case Mir::MirInstr::Type::WriteMem:
+        return "WriteMem";
     default:
         return "Unknown";
     }
 }
 
-Mir::TypeId str_to_type( CompilerState &state, const String &str,
-                         InFileInfo ifi ) {
-    if ( str == "int" ) {
-        return Mir::TYPE_INT;
-    } else if ( str == "bool" ) {
-        return Mir::TYPE_BOOL;
-    } else {
-        make_error_msg( state, "Unknown type name", ifi,
-                        RetCode::SemanticError );
-        return 0;
+Mir::TypeId spec_to_type( Mir &mir, const TypeSpecifier &spec ) {
+    if ( mir.map_to_type_id.find( spec ) == mir.map_to_type_id.end() ) {
+        mir.map_to_type_id[spec] = mir.next_type++;
     }
-}
-String type_to_str( CompilerState &state, Mir::TypeId type, InFileInfo ifi ) {
-    if ( type == Mir::TYPE_INT ) {
-        return "int";
-    } else if ( type == Mir::TYPE_BOOL ) {
-        return "bool";
-    } else {
-        make_error_msg( state, "Unknown type id. This is an internal error.",
-                        ifi, RetCode::InternalError );
-        return 0;
-    }
+    return mir.map_to_type_id[spec];
 }
 
 // Sift down used for std::make_heap heaps (as standard library does not provide
@@ -175,23 +166,70 @@ Mir::FunctionInfo &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
     return mir.func_map[fn_symbol_id];
 }
 
-void discover_all_function_signatures( CompilerState &state, Mir &mir,
-                                       SemanticData &semantic_data,
-                                       AstNode &node ) {
+Mir::StructInfo &get_struct_info( Mir &mir, SymbolId struct_symbol_id ) {
+    return mir.struct_map[struct_symbol_id];
+}
+
+size_t get_struct_size( Mir &mir, SymbolId struct_symbol_id );
+
+size_t get_type_size( Mir &mir, const TypeSpecifier &type_spec ) {
+    if ( type_spec.type == TypeSpecifier::Type::Struct ) {
+        return get_struct_size( mir, type_spec.struct_symbol_id->value() );
+    } else {
+        return 8;
+    }
+}
+
+size_t get_struct_size( Mir &mir, SymbolId struct_symbol_id ) {
+    auto &struct_info = get_struct_info( mir, struct_symbol_id );
+    if ( !struct_info.cached_size ) {
+        size_t size = 0;
+        for ( auto &pair : struct_info.fields ) {
+            size += get_type_size( mir, *pair.first );
+        }
+        struct_info.cached_size = size;
+    }
+    return struct_info.cached_size.value();
+}
+
+size_t get_struct_field_offset( Mir &mir, SymbolId struct_symbol_id,
+                                const String &field_name ) {
+    auto &struct_info = get_struct_info( mir, struct_symbol_id );
+    size_t offset = 0;
+    for ( auto &pair : struct_info.fields ) {
+        if ( pair.second == field_name )
+            break;
+        offset += get_type_size( mir, *pair.first );
+    }
+    return offset;
+}
+
+void discover_all_signatures( CompilerState &state, Mir &mir,
+                              SemanticData &semantic_data, AstNode &node ) {
     // Iterate global nodes
     if ( auto fn_def = FunctionDef( node ) ) {
         auto &fn_info = get_func_signature( mir, fn_def.fn_symbol_id->value() );
 
         // Return type
-        fn_info.ret_type =
-            str_to_type( state, fn_def.type, node.nodes->itr().get().ifi );
+        fn_info.ret_type = spec_to_type( mir, *fn_def.type );
 
         // Params
         auto itr = fn_def.params->itr();
         while ( itr ) {
             auto decl = DeclUninit( itr.get() );
-            fn_info.arg_types.push_back(
-                str_to_type( state, decl.type, node.ifi ) );
+            fn_info.arg_types.push_back( spec_to_type( mir, *decl.type ) );
+            itr.skip_self( 1 );
+        }
+    } else if ( auto struct_def = StructDef( node ) ) {
+        auto &struct_info =
+            get_struct_info( mir, struct_def.struct_symbol_id->value() );
+
+        // Fields
+        auto itr = struct_def.fields->itr();
+        while ( itr ) {
+            auto decl = DeclUninit( itr.get() );
+            struct_info.fields.push_back(
+                std::make_pair( decl.type, decl.symbol ) );
             itr.skip_self( 1 );
         }
     } else if ( node.type == AT::GlobalScope ) {
@@ -211,8 +249,7 @@ void discover_all_function_signatures( CompilerState &state, Mir &mir,
         // Recurse into function definitions
         auto itr = node.nodes->itr();
         while ( itr ) {
-            discover_all_function_signatures( state, mir, semantic_data,
-                                              itr.get() );
+            discover_all_signatures( state, mir, semantic_data, itr.get() );
             itr.skip_self( 1 );
         }
     }
@@ -236,7 +273,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             auto decl = DeclUninit( itr.get() );
             if ( decl.symbol_id )
                 mir.var_map[decl.symbol_id->value()] = var;
-            mir.type_of( var ) = str_to_type( state, decl.type, node.ifi );
+            mir.type_of( var ) = spec_to_type( mir, *decl.type );
             itr.skip_self( 1 );
         }
 
@@ -278,11 +315,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         write_mir_instr( state, mir, *decl.init, variable );
-        mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
+        mir.type_of( variable ) = spec_to_type( mir, *decl.type );
     } else if ( auto decl = DeclUninit( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
-        mir.type_of( variable ) = str_to_type( state, decl.type, node.ifi );
+        mir.type_of( variable ) = spec_to_type( mir, *decl.type );
         mir.instrs.put( MI{ MT::Uninit, variable, 0, 0, 0, node.ifi } );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id->value()];
@@ -308,11 +345,18 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::Const, into_var, 0, 0,
                             bool_const.value ? -1 : 0, node.ifi,
                             ArithType::None, Mir::TYPE_BOOL } );
+    } else if ( node.type == AT::NullConst ) {
+        mir.instrs.put(
+            MI{ MT::Const, into_var, 0, 0, 0, node.ifi, ArithType::None,
+                spec_to_type( mir,
+                              *TypeSpecifier::make_pointer_to(
+                                  std::make_shared<TypeSpecifier>( "" ) ) ) } );
     } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
         VarId variable =
             mir.var_map[symbol_id_of_lvalue( state, *stmt.lvalue )];
+        // TODO update with L4 stuff
         write_mir_instr( state, mir, *stmt.value, variable );
     } else if ( auto bin_op = BinOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
@@ -423,6 +467,108 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         // Call function
         mir.instrs.put( MI{ MT::Call, into_var, 0, 0, fn_info.label, node.ifi,
                             ArithType::None, fn_info.ret_type } );
+    } else if ( auto call = AllocCall( node ) ) {
+        auto itr = call.args->itr();
+        // Calculate type size
+        auto shr_type_spec = TypeSpecifier::make_pointer_to(
+            std::make_shared<TypeSpecifier>( itr.get() ) );
+        auto type_id = spec_to_type( mir, *shr_type_spec );
+        i32 type_size = get_type_size( mir, *shr_type_spec );
+        VarId type_size_var = mir.next_var++;
+        mir.instrs.put( MI{ MT::Const, type_size_var, 0, 0, type_size, node.ifi,
+                            ArithType::None, Mir::TYPE_INT } );
+
+        if ( call.fn_symbol == "alloc" ) {
+            // Allocate simply one element.
+            VarId count_var = mir.next_var++;
+            mir.instrs.put( MI{ MT::Const, count_var, 0, 0, 1, node.ifi,
+                                ArithType::None, Mir::TYPE_INT } );
+            // Put parameters in reverse order
+            mir.instrs.put( MI{ MT::Arg, 0, type_size_var, 0, mir.alloc_label,
+                                node.ifi, ArithType::None, mir.TYPE_INT } );
+            mir.instrs.put( MI{ MT::Arg, 0, count_var, 0, mir.alloc_label,
+                                node.ifi, ArithType::None, mir.TYPE_INT } );
+
+            // Call allocation function
+            VarId tmp = mir.next_var++;
+            mir.instrs.put( MI{ MT::Call, tmp, 0, 0, mir.alloc_label, node.ifi,
+                                ArithType::None } );
+
+            // Cast to requested type
+            mir.instrs.put( MI{ MT::TypeCast, into_var, tmp, 0, mir.alloc_label,
+                                node.ifi, ArithType::None, type_id } );
+        } else if ( call.fn_symbol == "alloc_array" ) {
+            // Evaluate element count argument
+            VarId tmp_count = mir.next_var++;
+            VarId tmp_one = mir.next_var++;
+            write_mir_instr( state, mir, itr.skip( 1 ).get(), tmp_count );
+            // Add 1 to count_var for the added pointer
+            VarId count_var = mir.next_var++;
+            mir.instrs.put( MI{ MT::Const, tmp_one, 0, 0, 1, node.ifi,
+                                ArithType::None, Mir::TYPE_INT } );
+            mir.instrs.put( MI{ MT::BinOp, count_var, tmp_count, tmp_one, 0,
+                                node.ifi, ArithType::Add } );
+
+            // Put parameters in reverse order
+            mir.instrs.put( MI{ MT::Arg, 0, type_size_var, 0, mir.alloc_label,
+                                node.ifi, ArithType::None, mir.TYPE_INT } );
+            mir.instrs.put( MI{ MT::Arg, 0, count_var, 0, mir.alloc_label,
+                                node.ifi, ArithType::None, mir.TYPE_INT } );
+
+            // Call allocation function
+            VarId ptr = mir.next_var++;
+            mir.instrs.put(
+                MI{ MT::Call, ptr, 0, 0, mir.alloc_label, node.ifi } );
+
+            // Assign dynamic array size and shift returned pointer
+            mir.instrs.put(
+                MI{ MT::WriteMem, 0, ptr, count_var, 0, node.ifi } );
+            VarId shifted_ptr = mir.next_var++;
+            mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_one, 0,
+                                node.ifi, ArithType::Add } );
+
+            // Cast to requested type
+            mir.instrs.put( MI{ MT::TypeCast, into_var, shifted_ptr, 0,
+                                mir.alloc_label, node.ifi, ArithType::None,
+                                type_id } );
+        }
+    } else if ( auto access = FieldAccess( node ) ) {
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        mir.instrs.put( MI{ MT::FieldAccess, into_var, lhs_var, 0, 0, node.ifi,
+                            ArithType::None, 0, access.field_symbol } );
+    } else if ( auto access = ArrayAccess( node ) ) {
+        // First base address calculation
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        auto array_type = TypeSpecifier( *access.lhs );
+        if ( array_type.type != TypeSpecifier::Type::Array ) {
+            make_error_msg( state, "Array access expects array type.", node.ifi,
+                            RetCode::SemanticError );
+            return;
+        }
+
+        // Address calculation
+        VarId idx_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.idx, idx_var );
+        i32 elem_offset = get_type_size( mir, *array_type.sub );
+        VarId factor_var = mir.next_var++;
+        mir.instrs.put(
+            MI{ MT::Const, factor_var, 0, 0, elem_offset, node.ifi } );
+        VarId prod_var = mir.next_var++;
+        mir.instrs.put( MI{ MT::BinOp, prod_var, idx_var, factor_var, 0,
+                            node.ifi, ArithType::Mul } );
+        VarId final_addr = mir.next_var++;
+        mir.instrs.put( MI{ MT::BinOp, final_addr, lhs_var, prod_var, 0,
+                            node.ifi, ArithType::Add } );
+
+        // Actual access
+        mir.instrs.put(
+            MI{ MT::ReadMem, into_var, final_addr, 0, 0, node.ifi } );
+    } else if ( auto ptr_deref = PtrDeref( node ) ) {
+        VarId addr = mir.next_var++;
+        write_mir_instr( state, mir, *access.idx, addr );
+        mir.instrs.put( MI{ MT::ReadMem, into_var, addr, 0, 0, node.ifi } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
         while ( itr ) {
@@ -699,7 +845,7 @@ Mir construct_mir( CompilerState &state, SemanticData &semantic_data,
                    AstNode &root_node ) {
     Mir mir;
 
-    discover_all_function_signatures( state, mir, semantic_data, root_node );
+    discover_all_signatures( state, mir, semantic_data, root_node );
     write_mir_instr( state, mir, root_node, mir.next_var++ );
 
     // Check whether there are None ops

@@ -113,18 +113,22 @@ AstNode &unwrap_paren( AstNode &node ) {
 class TypeSpecifier : public FacadeBase {
 public:
     TypeSpecifier() {}
+    TypeSpecifier( const String &prim_name ) {
+        type = Type::Prim;
+        name = prim_name;
+    }
     TypeSpecifier( AstNode &node ) {
         matches = true;
-        if ( node.type == AT::PrimType ) {
+        if ( node.type == AstNode::Type::PrimType ) {
             type = Type::Prim;
             name = node.tok->content;
-        } else if ( node.type == AT::PtrType ) {
+        } else if ( node.type == AstNode::Type::PtrType ) {
             type = Type::Ptr;
             sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
-        } else if ( node.type == AT::ArrayType ) {
+        } else if ( node.type == AstNode::Type::ArrayType ) {
             type = Type::Array;
             sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
-        } else if ( node.type == AT::StructType ) {
+        } else if ( node.type == AstNode::Type::StructType ) {
             type = Type::Struct;
             name = node.tok->content;
             struct_symbol_id = &node.symbol_id;
@@ -139,13 +143,19 @@ public:
     bool operator!=( const TypeSpecifier &other ) const {
         return !( *this == other );
     }
+    static std::shared_ptr<TypeSpecifier> make_pointer_to(
+        const std::shared_ptr<TypeSpecifier> &sub ) {
+        auto ret = std::make_shared<TypeSpecifier>();
+        ret->type = Type::Ptr;
+        ret->sub = sub;
+        return ret;
+    }
 
     enum class Type { None, Prim, Ptr, Array, Struct, count } type = Type::None;
     std::shared_ptr<TypeSpecifier> sub;
     String name;
     Opt<SymbolId> *struct_symbol_id = nullptr;
 };
-using ShrTypeS = std::shared_ptr<TypeSpecifier>;
 
 class FunctionDef : public FacadeBase {
 public:
@@ -169,7 +179,7 @@ public:
         }
     }
 
-    ShrTypeS type;
+    std::shared_ptr<TypeSpecifier> type;
     String fn_symbol;
     Opt<SymbolId> *fn_symbol_id = nullptr;
     AstCont *params = nullptr;
@@ -219,7 +229,7 @@ public:
         }
     }
 
-    ShrTypeS type;
+    std::shared_ptr<TypeSpecifier> type;
     String symbol;
     Opt<SymbolId> *symbol_id = nullptr;
     AstNode *init = nullptr;
@@ -237,7 +247,7 @@ public:
         }
     }
 
-    ShrTypeS type;
+    std::shared_ptr<TypeSpecifier> type;
     String symbol;
     Opt<SymbolId> *symbol_id = nullptr;
 };
@@ -494,19 +504,43 @@ public:
     AstCont *args = nullptr;
 };
 
-class MemberAccess : public FacadeBase {
+
+class AllocCall : public FacadeBase {
 public:
-    MemberAccess( AstNode &to_wrap ) {
-        matches = to_wrap.type == AstNode::Type::MemberAccess;
+    AllocCall( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::AllocCall;
+        if ( matches ) {
+            auto itr = to_wrap.nodes->itr();
+            fn_symbol = itr.get().tok->content;
+            auto &paren_content = itr.skip( 1 ).get().nodes;
+            if ( paren_content->empty() ||
+                 paren_content->itr().get().type != AstNode::Type::CommaList ) {
+                args = &*paren_content;
+            } else {
+                // Pass elements of the CommaList
+                args = &*paren_content->itr().get().nodes;
+            }
+        }
+    }
+
+    String fn_symbol;
+    AstCont *args = nullptr;
+};
+
+class FieldAccess : public FacadeBase {
+public:
+    FieldAccess( AstNode &to_wrap ) {
+        matches = to_wrap.type == AstNode::Type::FieldAccess;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
             lhs = &itr.get();
-            rhs = &itr.skip( 1 ).get();
+            auto &rhs = itr.skip( 1 ).get();
+            field_symbol = rhs.tok->content;
         }
     }
 
     AstNode *lhs = nullptr;
-    AstNode *rhs = nullptr;
+    String field_symbol;
 };
 
 class IndirectAccess : public FacadeBase {
@@ -553,5 +587,8 @@ public:
 };
 
 } // namespace AstNodeFacades
+
+using ShrTypeS = std::shared_ptr<AstNodeFacades::TypeSpecifier>;
+using TypeSpecifier = AstNodeFacades::TypeSpecifier;
 
 } // namespace chc

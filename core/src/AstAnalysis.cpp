@@ -461,7 +461,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                 inner_node.ifi = inner_node.tok->ifi;
 
                 // Outer node
-                auto outer_node = AstNode{ AT::MemberAccess };
+                auto outer_node = AstNode{ AT::FieldAccess };
                 outer_node.nodes = std::make_shared<AstCont>();
                 outer_node.nodes->put( inner_node );
                 outer_node.nodes->put( *access.rhs );

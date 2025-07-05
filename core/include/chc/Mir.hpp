@@ -29,6 +29,10 @@ struct Mir {
             Param,
             Arg,
             Call,
+            TypeCast,
+            FieldAccess,
+            ReadMem,
+            WriteMem,
 
             count
         } type = Type::None;
@@ -42,7 +46,8 @@ struct Mir {
         InFileInfo ifi;
 
         ArithType subtype = ArithType::None;
-        TypeId type_constraint = 0;
+        TypeId type_constraint = 0; // also to calculate type size
+        String name; // For field access
 
         std::set<VarId> live;
         std::set<VarId> needed; // Needed variables
@@ -57,15 +62,23 @@ struct Mir {
         i32 label;
         size_t max_register_used = 0;
     };
+    struct StructInfo {
+        std::vector<std::pair<ShrTypeS, String>> fields;
+        Opt<size_t> cached_size;
+    };
 
     EagerContainer<MirInstr> instrs;
     std::map<SymbolId, VarId> var_map;
     std::map<SymbolId, FunctionInfo> func_map;
     std::map<i32, SymbolId> func_label_to_symbol;
+    std::map<SymbolId, StructInfo> struct_map;
     VarId next_var = 1;
-    VarId next_type = 1; // TODO
+    TypeId next_type = 1;
+    std::map<TypeSpecifier, TypeId> map_to_type_id;
+    std::map<TypeId, TypeSpecifier> map_to_type_spec;
 
     i32 next_label = 1;
+    i32 alloc_label; // TODO add wrapper function
     std::deque<i32> continue_stack;
     std::deque<i32> break_stack;
     TypeId curr_fn_return_type;
@@ -82,8 +95,20 @@ struct Mir {
         return types[var];
     }
 
-    static constexpr TypeId TYPE_INT = 1;
-    static constexpr TypeId TYPE_BOOL = 2;
+    static constexpr TypeId TYPE_ANY = 1;
+    static constexpr TypeId TYPE_INT = 2;
+    static constexpr TypeId TYPE_BOOL = 3;
+
+    Mir() {
+        map_to_type_id[TypeSpecifier( "" )] = TYPE_ANY;
+        map_to_type_id[TypeSpecifier( "int" )] = TYPE_INT;
+        map_to_type_id[TypeSpecifier( "bool" )] = TYPE_BOOL;
+        map_to_type_spec[TYPE_ANY] = TypeSpecifier( "" );
+        map_to_type_spec[TYPE_INT] = TypeSpecifier( "int" );
+        map_to_type_spec[TYPE_BOOL] = TypeSpecifier( "bool" );
+
+        alloc_label = next_label++;
+    }
 };
 
 void analyze_liveness( CompilerState &state, Mir &mir );
