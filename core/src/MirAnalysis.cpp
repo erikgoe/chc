@@ -193,6 +193,35 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 }
                 mir.type_of( instr.result ) = mir.type_of( instr.p0 );
             }
+        } else if ( instr.type == MT::TypeCast ) {
+            if ( mir.type_of( instr.result ) != 0 &&
+                 mir.type_of( instr.result ) != instr.type_constraint ) {
+                make_error_msg( state, "Type mismatch at type cast.", instr.ifi,
+                                RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = instr.type_constraint;
+        } else if ( instr.type == MT::FieldAccess ) {
+            auto struct_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
+            if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
+                make_error_msg(
+                    state,
+                    "Field access on variable, which is not an struct-object.",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto &fields =
+                mir.struct_map[struct_ts.struct_symbol_id->value()].fields;
+            auto field_itr = std::find_if(
+                fields.begin(), fields.end(),
+                [&]( auto &&pair ) { return pair.second == instr.name; } );
+            if ( field_itr == fields.end() ) {
+                make_error_msg( state,
+                                "Identifier does not name field of struct.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
         }
     } );
 }

@@ -88,7 +88,9 @@ String Mir::MirInstr::type_name() const {
 
 Mir::TypeId spec_to_type( Mir &mir, const TypeSpecifier &spec ) {
     if ( mir.map_to_type_id.find( spec ) == mir.map_to_type_id.end() ) {
-        mir.map_to_type_id[spec] = mir.next_type++;
+        TypeId id = mir.next_type++;
+        mir.map_to_type_id[spec] = id;
+        mir.map_to_type_spec[id] = spec;
     }
     return mir.map_to_type_id[spec];
 }
