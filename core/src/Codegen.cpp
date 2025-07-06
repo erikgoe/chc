@@ -79,7 +79,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         String tmp = content;
         while ( tmp.find( "*/" ) != tmp.npos )
             tmp.insert( tmp.find( "*/" ) + 1, " " );
-            
+
         assembly.put(
             Assembly_x86{ AOC::Comment, no_reg, no_reg, 0, tmp, ifi } );
     };
@@ -529,6 +529,34 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // Result after registers were restored to prevent overwriting
             writeback_opt( instr.result, HwReg::r10d, instr.ifi );
             saved_caller_registers = false;
+        } else if ( instr.type == MT::TypeCast ) {
+            // Basically the same as a move
+            auto src_reg = make_available( instr.p0, instr.ifi );
+            writeback_opt( instr.result, src_reg, instr.ifi );
+        } else if ( instr.type == MT::FieldAccess ||
+                    instr.type == MT::IndirectAccess ) {
+            size_t offset = get_struct_field_offset(
+                mir, mir.var_struct_symbols[instr.result], instr.name );
+
+            put_reg_imm( AOC::MovConst, HwReg::eax, offset, instr.ifi );
+            auto base_reg = make_available( instr.p0, instr.ifi );
+            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
+
+            if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
+                 TypeSpecifier::Type::Struct ) {
+                // Small types must be loaded from memory
+                put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax,
+                             instr.ifi );
+            }
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
+        } else if ( instr.type == MT::ReadMem ) {
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
+        } else if ( instr.type == MT::WriteMem ) {
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
+            put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax, instr.ifi );
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(
@@ -671,6 +699,12 @@ void generate_asm_text_x86( CompilerState &state,
             put_asm( "movzbl %al, %eax" );
         } else if ( op.opcode == AOC::MovSymbolWithRip64 ) {
             put_asm( "movq " + op.str + "(%rip), " + to_reg_64_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovIndrTo ) {
+            put_asm( "movq 0(" + to_reg_64_str( op.src ) + "), " +
+                     to_reg_64_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovIndrFrom ) {
+            put_asm( "movq " + to_reg_64_str( op.src ) + ", +(" +
+                     to_reg_64_str( op.dest ) + ")" );
         } else if ( op.opcode == AOC::Syscall ) {
             put_asm( "syscall" );
         } else if ( op.opcode == AOC::Add ) {

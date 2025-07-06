@@ -550,12 +550,13 @@ public:
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
             lhs = &itr.get();
-            rhs = &itr.skip( 1 ).get();
+            auto &rhs = itr.skip( 1 ).get();
+            field_symbol = rhs.tok->content;
         }
     }
 
     AstNode *lhs = nullptr;
-    AstNode *rhs = nullptr;
+    String field_symbol;
 };
 
 class ArrayAccess : public FacadeBase {

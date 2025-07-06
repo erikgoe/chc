@@ -539,6 +539,13 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         write_mir_instr( state, mir, *access.lhs, lhs_var );
         mir.instrs.put( MI{ MT::FieldAccess, into_var, lhs_var, 0, 0, node.ifi,
                             ArithType::None, 0, access.field_symbol } );
+    } else if ( auto access = IndirectAccess( node ) ) {
+        // Basically the same thing as normal field access
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        mir.instrs.put( MI{ MT::IndirectAccess, into_var, lhs_var, 0, 0,
+                            node.ifi, ArithType::None, 0,
+                            access.field_symbol } );
     } else if ( auto access = ArrayAccess( node ) ) {
         // First base address calculation
         VarId lhs_var = mir.next_var++;
@@ -564,9 +571,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         mir.instrs.put( MI{ MT::BinOp, final_addr, lhs_var, prod_var, 0,
                             node.ifi, ArithType::Add } );
 
-        // Actual access
-        mir.instrs.put(
-            MI{ MT::ReadMem, into_var, final_addr, 0, 0, node.ifi } );
+        if ( array_type.sub->type != TypeSpecifier::Type::Struct ) {
+            // Actual access, if it is a small type
+            mir.instrs.put(
+                MI{ MT::ReadMem, into_var, final_addr, 0, 0, node.ifi } );
+        }
     } else if ( auto ptr_deref = PtrDeref( node ) ) {
         VarId addr = mir.next_var++;
         write_mir_instr( state, mir, *access.idx, addr );

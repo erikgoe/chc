@@ -451,7 +451,8 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     node = outer_node;
                     return true;
                 }
-            } else if ( auto access = IndirectAccess( node ) ) {
+                // TODO delete
+            /*} else if ( auto access = IndirectAccess( node ) ) {
                 // Translate indirect access into deref + access.
                 // Inner operation
                 auto inner_node = AstNode{ AT::PtrDeref };
@@ -470,7 +471,7 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
 
                 // Replace
                 node = outer_node;
-                return true;
+                return true;*/
             } else if ( auto uni_op = UniOp( node ) ) {
                 if ( uni_op.type == ArithType::LNot ) {
                     // Translate logical not into ternary operator.

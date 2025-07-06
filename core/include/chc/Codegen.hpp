@@ -46,10 +46,12 @@ struct Assembly_x86 {
         MovConst, // "mov $<imm>, <dest>"
         MovConst64, // "mov $<imm>, <dest>"
         MovFromStack, // "movl $<imm>(%rbp), <dest>"
-        MovFromStack64, // "mov1 $<imm>(%rbp), <dest>"
+        MovFromStack64, // "movq $<imm>(%rbp), <dest>"
         MovToStack, // "movl <src>, $<imm>(%rbp)"
         MovZeroExtend, // "movzbl %al, %eax"
         MovSymbolWithRip64, // "movl <str>(%rip), <dest>"
+        MovIndrTo, // "movq 0(<src>), <dest>"
+        MovIndrFrom, // "movq <src>, 0(<dest>)"
         Syscall,
         Add,
         Add64,

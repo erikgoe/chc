@@ -31,6 +31,7 @@ struct Mir {
             Call,
             TypeCast,
             FieldAccess,
+            IndirectAccess,
             ReadMem,
             WriteMem,
 
@@ -94,6 +95,7 @@ struct Mir {
             types.resize( var + 1 );
         return types[var];
     }
+    std::map<VarId, SymbolId> var_struct_symbols; // Maps variables to structs
 
     static constexpr TypeId TYPE_ANY = 1;
     static constexpr TypeId TYPE_INT = 2;
@@ -111,6 +113,8 @@ struct Mir {
     }
 };
 
+size_t get_struct_field_offset( Mir &mir, SymbolId struct_symbol_id,
+                                const String &field_name );
 void analyze_liveness( CompilerState &state, Mir &mir );
 
 void analyze_neededness( CompilerState &state, Mir &mir );
