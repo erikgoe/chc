@@ -163,7 +163,22 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 RetCode::SemanticError );
                 return;
             }
-            // TODO pointer operations
+            if ( mir.map_to_type_spec[mir.type_of( instr.p0 )].type ==
+                 TypeSpecifier::Type::Ptr ) {
+                if ( instr.subtype != ArithType::Eq &&
+                     instr.subtype != ArithType::UnEq ) {
+                    make_error_msg( state, "Pointer arithmetic is not allowed.",
+                                    instr.ifi, RetCode::SemanticError );
+                    return;
+                }
+                if ( mir.map_to_type_spec[mir.type_of( instr.p0 )].sub !=
+                     mir.map_to_type_spec[mir.type_of( instr.p1 )].sub ) {
+                    make_error_msg(
+                        state, "Pointer comparison requires type equality.",
+                        instr.ifi, RetCode::SemanticError );
+                    return;
+                }
+            }
 
             if ( has_only_int_ret( instr.subtype ) ) {
                 mir.type_of( instr.result ) = mir.TYPE_INT;
