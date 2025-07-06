@@ -112,15 +112,29 @@ void drop_uninit_instrs( CompilerState &state, Mir &mir ) {
 }
 
 void type_checking( CompilerState &state, Mir &mir ) {
-    mir.instrs.for_each( [&]( const Mir::MirInstr &instr ) {
-        if ( instr.type == MT::Const ) {
-            if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.type_constraint ) {
-                make_error_msg( state, "Type mismatch", instr.ifi,
-                                RetCode::SemanticError );
-                return;
+    auto match_types = [&]( Mir::TypeId &lhs, Mir::TypeId &rhs,
+                            const InFileInfo &ifi, const String &hint = "" ) {
+        if ( lhs != rhs ) {
+            if ( rhs == 0 || rhs == Mir::TYPE_ANY ) {
+                lhs = rhs;
+            } else if ( lhs == 0 || lhs == Mir::TYPE_ANY ) {
+                rhs = lhs;
+            } else {
+                make_error_msg(
+                    state,
+                    "Type mismatch" + ( hint != "" ? " (" + hint + ")" : "" ),
+                    ifi, RetCode::SemanticError );
+                return false;
             }
-            mir.type_of( instr.result ) = instr.type_constraint;
+        }
+        return true;
+    };
+
+    mir.instrs.for_each( [&]( Mir::MirInstr &instr ) {
+        if ( instr.type == MT::Const ) {
+            if ( !match_types( mir.type_of( instr.result ),
+                               instr.type_constraint, instr.ifi ) )
+                return;
         } else if ( instr.type == MT::BinOp ) {
             if ( mir.type_of( instr.p0 ) == 0 ||
                  mir.type_of( instr.p1 ) == 0 ) {
@@ -128,11 +142,9 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 RetCode::SemanticError );
                 return;
             }
-            if ( mir.type_of( instr.p0 ) != mir.type_of( instr.p1 ) ) {
-                make_error_msg( state, "Type mismatch", instr.ifi,
-                                RetCode::SemanticError );
+            if ( !match_types( mir.type_of( instr.p0 ), mir.type_of( instr.p1 ),
+                               instr.ifi ) )
                 return;
-            }
             if ( ( has_only_int_params( instr.subtype ) &&
                    mir.type_of( instr.p0 ) != Mir::TYPE_INT ) ||
                  ( has_only_int_ret( instr.subtype ) &&
@@ -151,6 +163,8 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 RetCode::SemanticError );
                 return;
             }
+            // TODO pointer operations
+
             if ( has_only_int_ret( instr.subtype ) ) {
                 mir.type_of( instr.result ) = mir.TYPE_INT;
             } else if ( has_only_bool_ret( instr.subtype ) ) {
@@ -159,25 +173,18 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 mir.type_of( instr.result ) = mir.type_of( instr.p0 );
             }
         } else if ( instr.type == MT::Ret ) {
-            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
-                make_error_msg( state, "Return type mismatch", instr.ifi,
-                                RetCode::SemanticError );
+            if ( !match_types( mir.type_of( instr.p0 ), instr.type_constraint,
+                               instr.ifi, "return type" ) )
                 return;
-            }
         } else if ( instr.type == MT::Arg ) {
-            if ( mir.type_of( instr.p0 ) != instr.type_constraint ) {
-                make_error_msg( state, "Argument type mismatch", instr.ifi,
-                                RetCode::SemanticError );
+            if ( !match_types( mir.type_of( instr.p0 ), instr.type_constraint,
+                               instr.ifi, "argument type" ) )
                 return;
-            }
         } else if ( instr.type == MT::Call ) {
-            if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.type_constraint ) {
-                make_error_msg( state, "Type mismatch with function result",
-                                instr.ifi, RetCode::SemanticError );
+            if ( !match_types( mir.type_of( instr.result ),
+                               instr.type_constraint, instr.ifi,
+                               "function result type" ) )
                 return;
-            }
-            mir.type_of( instr.result ) = instr.type_constraint;
         } else if ( instr.type == MT::Mov ) {
             if ( instr.p0 != 0 ) {
                 if ( mir.type_of( instr.p0 ) == 0 ) {
@@ -185,22 +192,14 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                     RetCode::SemanticError );
                     return;
                 }
-                if ( mir.type_of( instr.result ) != 0 &&
-                     mir.type_of( instr.result ) != mir.type_of( instr.p0 ) ) {
-                    make_error_msg( state, "Type mismatch", instr.ifi,
-                                    RetCode::SemanticError );
+                if ( !match_types( mir.type_of( instr.result ),
+                                   mir.type_of( instr.p0 ), instr.ifi ) )
                     return;
-                }
-                mir.type_of( instr.result ) = mir.type_of( instr.p0 );
             }
         } else if ( instr.type == MT::TypeCast ) {
-            if ( mir.type_of( instr.result ) != 0 &&
-                 mir.type_of( instr.result ) != instr.type_constraint ) {
-                make_error_msg( state, "Type mismatch at type cast.", instr.ifi,
-                                RetCode::SemanticError );
+            if ( !match_types( mir.type_of( instr.result ),
+                               instr.type_constraint, instr.ifi, "type cast" ) )
                 return;
-            }
-            mir.type_of( instr.result ) = instr.type_constraint;
         } else if ( instr.type == MT::FieldAccess ) {
             auto struct_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
@@ -227,10 +226,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
         } else if ( instr.type == MT::IndirectAccess ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
-                make_error_msg(
-                    state,
-                    "Indirect field access on variable, which is not a pointer.",
-                    instr.ifi, RetCode::SemanticError );
+                make_error_msg( state,
+                                "Indirect field access on variable, which is "
+                                "not a pointer.",
+                                instr.ifi, RetCode::SemanticError );
                 return;
             }
             auto struct_ts = *ptr_ts.sub;

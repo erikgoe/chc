@@ -47,8 +47,8 @@ size_t line_from_offset( const String &str, size_t offset ) {
     return ln;
 }
 
-String get_fn_label( SymbolId id ) {
-    return "fn" + to_string( id );
+String get_fn_label( Mir &mir, SymbolId id ) {
+    return "fn" + to_string( mir.func_map[id].label );
 }
 
 void generate_code_x86( CompilerState &state, const String &original_source,
@@ -281,7 +281,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
 
     // Add preamble
     auto main_fn_label =
-        get_fn_label( mir.func_map[mir.main_function_symbol].label );
+        get_fn_label( mir, mir.func_map[mir.main_function_symbol].label );
     put_str( AOC::Global, "main", no_ifi );
     put_empty( AOC::Text, no_ifi );
     put_label( "main", no_ifi );
@@ -290,7 +290,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     // Call flush after main. Push twice to keep alignment
     put_src_reg( AOC::Push, HwReg::eax, no_ifi );
     put_src_reg( AOC::Push, HwReg::eax, no_ifi );
-    put_str( AOC::Call, get_fn_label( semantic_data.func_map["flush"].id ),
+    put_str( AOC::Call, get_fn_label( mir, semantic_data.func_map["flush"].id ),
              no_ifi );
     put_reg( AOC::Pop, HwReg::eax, no_ifi );
     put_reg( AOC::Pop, HwReg::eax, no_ifi );
@@ -306,7 +306,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_str( AOC::Extern, "stdout", no_ifi );
     for ( auto b : semantic_data.build_in_symbols ) {
         SymbolId symbol = b.second;
-        String label = get_fn_label( b.second );
+        String label = get_fn_label( mir, b.second );
 
         // Preamble
         put_comment( "wrapper: " + b.first, no_ifi );
@@ -480,7 +480,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_str( AOC::Jz, "l" + to_string( instr.imm ), instr.ifi );
         } else if ( instr.type == MT::Func ) {
             // Assume clean state for all registers.
-            put_label( get_fn_label( instr.imm ), instr.ifi );
+            put_label( get_fn_label( mir, instr.imm ), instr.ifi );
             curr_fn_info = mir.func_map[mir.func_label_to_symbol[instr.imm]];
             size_t local_bytes = 4 * ( curr_fn_info.max_register_used -
                                        std::min( curr_fn_info.max_register_used,
@@ -508,7 +508,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             save_before_params_on_demand( callee_fn_info, instr.ifi );
 
             // Actual call with stack alignment
-            put_str( AOC::Call, get_fn_label( instr.imm ), instr.ifi );
+            put_str( AOC::Call,
+                     get_fn_label( mir, mir.func_label_to_symbol[instr.imm] ),
+                     instr.ifi );
 
             // Temporarily memorize result
             put_reg_reg( AOC::Mov, HwReg::r10d, HwReg::eax, instr.ifi );

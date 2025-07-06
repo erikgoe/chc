@@ -143,6 +143,15 @@ public:
     bool operator!=( const TypeSpecifier &other ) const {
         return !( *this == other );
     }
+    int operator<( const TypeSpecifier &other ) const {
+        if ( type != other.type )
+            return type < other.type;
+        if ( type == Type::Prim || type == Type::Struct ) {
+            return name < other.name;
+        } else {
+            return *sub < *other.sub;
+        }
+    }
     static std::shared_ptr<TypeSpecifier> make_pointer_to(
         const std::shared_ptr<TypeSpecifier> &sub ) {
         auto ret = std::make_shared<TypeSpecifier>();
@@ -194,7 +203,7 @@ public:
             auto itr = to_wrap.nodes->itr();
             struct_symbol = itr.get().tok->content;
             struct_symbol_id = &itr.get().symbol_id;
-            fields = &*itr.skip( 2 ).get().nodes;
+            fields = &*itr.skip( 1 ).get().nodes;
         }
     }
 

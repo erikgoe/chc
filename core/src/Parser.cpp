@@ -161,8 +161,10 @@ bool is_expr( const AstNode &node ) {
            ( node.type == AT::BinOp &&
              !is_asnop_operator( node.tok->content ) ) ||
            node.type == AT::UniOp || node.type == AT::BoolConst ||
-           node.type == AT::TernOp || node.type == AT::Call ||
-           node.type == AT::AllocCall;
+           node.type == AT::NullConst || node.type == AT::TernOp ||
+           node.type == AT::Call || node.type == AT::AllocCall ||
+           node.type == AT::FieldAccess || node.type == AT::IndirectAccess ||
+           node.type == AT::ArrayAccess || node.type == AT::PtrDeref;
 }
 
 bool is_stmt_body( const AstNode &node ) {
@@ -173,7 +175,9 @@ bool is_stmt_body( const AstNode &node ) {
 }
 
 bool is_lvalue( const AstNode &node ) {
-    return node.type == AT::Ident ||
+    return node.type == AT::Ident || node.type == AT::FieldAccess ||
+           node.type == AT::IndirectAccess || node.type == AT::ArrayAccess ||
+           node.type == AT::PtrDeref ||
            ( node.type == AT::Paren && node.nodes->not_empty() &&
              is_lvalue( *node.nodes->first() ) );
 }
@@ -344,8 +348,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             if ( type_ident.match( ast_tok( TT::Keyword, "int" ) ) ||
                  type_ident.match( ast_tok( TT::Keyword, "bool" ) ) ) {
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::PrimType, *type_ident.tok,
-                                              { type_ident } );
+                itr.get() =
+                    make_merged_node( AT::PrimType, *type_ident.tok, {} );
                 return true;
             }
             return false;
@@ -995,7 +999,9 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             if ( itr.get().type == AT::Block && parent.type == AT::StructDef ) {
                 auto block_itr = itr.get().nodes->itr();
                 while ( block_itr ) {
-                    if ( block_itr.get().type != AT::DeclUninit ) {
+                    if ( block_itr.get().type != AT::Stmt ||
+                         block_itr.get().nodes->itr().get().type !=
+                             AT::DeclUninit ) {
                         make_error_msg(
                             state, "Expected field in struct block.",
                             block_itr.get().ifi, RetCode::SyntaxError );
@@ -1033,7 +1039,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         }
         if ( node.type == AT::FunctionDef ) {
             auto fn_children = node.nodes->itr();
-            if ( fn_children.get().nodes->itr().get().tok->content == "main" &&
+            if ( fn_children.get().nodes->itr().skip( 1 ).get().tok->content ==
+                     "main" &&
                  fn_children.get().tok->content == "int" &&
                  fn_children.skip( 1 ).get().nodes->empty() )
                 found_main = true;

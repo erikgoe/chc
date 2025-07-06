@@ -118,7 +118,7 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
                 std::vector<std::pair<ShrTypeS, String>> fields;
                 auto f_itr = def.fields->itr();
                 while ( f_itr ) {
-                    auto decl = DeclUninit( f_itr.get() );
+                    auto decl = DeclUninit( f_itr.get().nodes->itr().get() );
                     if ( std::find_if( fields.begin(), fields.end(),
                                        [&]( auto &&pair ) {
                                            return pair.second == decl.symbol;
@@ -130,6 +130,7 @@ void global_symbol_analysis( CompilerState &state, SemanticData &semantic_data,
                     }
                     fields.push_back(
                         std::make_pair( decl.type, decl.symbol ) );
+                    f_itr.skip_self( 1 );
                 }
 
                 struct_map[def.struct_symbol] =
@@ -452,26 +453,26 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     return true;
                 }
                 // TODO delete
-            /*} else if ( auto access = IndirectAccess( node ) ) {
-                // Translate indirect access into deref + access.
-                // Inner operation
-                auto inner_node = AstNode{ AT::PtrDeref };
-                inner_node.nodes = std::make_shared<AstCont>();
-                inner_node.nodes->put( *access.lhs );
-                inner_node.tok = node.tok;
-                inner_node.ifi = inner_node.tok->ifi;
+                /*} else if ( auto access = IndirectAccess( node ) ) {
+                    // Translate indirect access into deref + access.
+                    // Inner operation
+                    auto inner_node = AstNode{ AT::PtrDeref };
+                    inner_node.nodes = std::make_shared<AstCont>();
+                    inner_node.nodes->put( *access.lhs );
+                    inner_node.tok = node.tok;
+                    inner_node.ifi = inner_node.tok->ifi;
 
-                // Outer node
-                auto outer_node = AstNode{ AT::FieldAccess };
-                outer_node.nodes = std::make_shared<AstCont>();
-                outer_node.nodes->put( inner_node );
-                outer_node.nodes->put( *access.rhs );
-                outer_node.tok = node.tok;
-                outer_node.ifi = outer_node.tok->ifi;
+                    // Outer node
+                    auto outer_node = AstNode{ AT::FieldAccess };
+                    outer_node.nodes = std::make_shared<AstCont>();
+                    outer_node.nodes->put( inner_node );
+                    outer_node.nodes->put( *access.rhs );
+                    outer_node.tok = node.tok;
+                    outer_node.ifi = outer_node.tok->ifi;
 
-                // Replace
-                node = outer_node;
-                return true;*/
+                    // Replace
+                    node = outer_node;
+                    return true;*/
             } else if ( auto uni_op = UniOp( node ) ) {
                 if ( uni_op.type == ArithType::LNot ) {
                     // Translate logical not into ternary operator.
