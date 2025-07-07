@@ -211,6 +211,15 @@ bool is_call_ident( const AstNode &node ) {
                         node.tok->content ) != built_in_functions.end() );
 }
 
+Opt<std::reference_wrapper<AstNode>> unwrap_paren( AstNode &node ) {
+    if ( node.type == AT::Paren ) {
+        if ( node.nodes->empty() )
+            return {};
+        return unwrap_paren( node.nodes->itr().get() );
+    }
+    return node;
+}
+
 EagerContainer<AstNode> &unwrap_comma_list_nodes( AstNode &node ) {
     assert( node.nodes );
     if ( node.type != AT::Paren )
@@ -972,6 +981,26 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                                     "statement of for-loop head.",
                                     step.ifi, RetCode::SemanticError );
                     return false;
+                }
+            }
+            return false;
+        } );
+
+    // Check for direct dereferencing NULL
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto none_node = ast( AT::None );
+            if ( parent.type == AT::PtrDeref ||
+                 parent.type == AT::FieldAccess ) {
+                auto &node = itr.get();
+                if ( node.type == AT::NullConst ||
+                     ( node.type == AT::Paren &&
+                       unwrap_paren( node ).value_or( none_node ).get().type ==
+                           AT::NullConst ) ) {
+                    make_error_msg(
+                        state, "Directly de-referencing NULL is not allowed!",
+                        node.ifi, RetCode::SyntaxError );
                 }
             }
             return false;
