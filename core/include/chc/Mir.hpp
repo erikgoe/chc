@@ -30,8 +30,12 @@ struct Mir {
             Arg,
             Call,
             TypeCast,
-            FieldAccess,
-            IndirectAccess,
+            FieldRead,
+            FieldWrite,
+            IndirectRead,
+            IndirectWrite,
+            ArrayRead,
+            ArrayWrite,
             ReadMem,
             WriteMem,
 
@@ -113,8 +117,13 @@ struct Mir {
     }
 };
 
+size_t get_type_size( Mir &mir, const TypeSpecifier &type_spec );
+
+size_t get_struct_size( Mir &mir, SymbolId struct_symbol_id );
+
 size_t get_struct_field_offset( Mir &mir, SymbolId struct_symbol_id,
                                 const String &field_name );
+
 void analyze_liveness( CompilerState &state, Mir &mir );
 
 void analyze_neededness( CompilerState &state, Mir &mir );

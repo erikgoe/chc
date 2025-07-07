@@ -535,10 +535,10 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // Basically the same as a move
             auto src_reg = make_available( instr.p0, instr.ifi );
             writeback_opt( instr.result, src_reg, instr.ifi );
-        } else if ( instr.type == MT::FieldAccess ||
-                    instr.type == MT::IndirectAccess ) {
+        } else if ( instr.type == MT::FieldRead ||
+                    instr.type == MT::IndirectRead ) {
             size_t offset = get_struct_field_offset(
-                mir, mir.var_struct_symbols[instr.result], instr.name );
+                mir, mir.var_struct_symbols[instr.p0], instr.name );
 
             put_reg_imm( AOC::MovConst, HwReg::eax, offset, instr.ifi );
             auto base_reg = make_available( instr.p0, instr.ifi );
@@ -551,14 +551,58 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                              instr.ifi );
             }
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
+        } else if ( instr.type == MT::ArrayRead ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.result )] );
+            type_size = std::max<size_t>( type_size, 1 ); // No zero alloc
+            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
+
+            auto count_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
+            auto base_reg = make_available( instr.p0, instr.ifi );
+            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
+
+            if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
+                 TypeSpecifier::Type::Struct ) {
+                // Small types must be loaded from memory
+                put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax,
+                             instr.ifi );
+            }
+            writeback_opt( instr.result, HwReg::eax, instr.ifi );
+        } else if ( instr.type == MT::FieldWrite ||
+                    instr.type == MT::IndirectWrite ) {
+            // Here instr.result has a special role, as it is also a parameter.
+            size_t offset = get_struct_field_offset(
+                mir, mir.var_struct_symbols[instr.result], instr.name );
+
+            put_reg_imm( AOC::MovConst, HwReg::eax, offset, instr.ifi );
+            auto base_reg = make_available( instr.result, instr.ifi );
+            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
+
+            auto to_store_reg = make_available( instr.p0, instr.ifi );
+            put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg, instr.ifi );
+        } else if ( instr.type == MT::ArrayWrite ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.p1 )] );
+            type_size = std::max<size_t>( type_size, 1 ); // No zero alloc
+            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
+
+            auto count_reg = make_available( instr.p0, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
+            // Here instr.result has a special role, as it is also a parameter.
+            auto base_reg = make_available( instr.result, instr.ifi );
+            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
+
+            auto to_store_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg, instr.ifi );
         } else if ( instr.type == MT::ReadMem ) {
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax, instr.ifi );
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::WriteMem ) {
-            make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax, instr.ifi );
-            writeback_opt( instr.result, HwReg::eax, instr.ifi );
+            auto val_reg = make_available( instr.p0, instr.ifi );
+            make_available_in( instr.result, HwReg::eax, instr.ifi );
+            put_reg_reg( AOC::MovIndrTo, HwReg::eax, val_reg, instr.ifi );
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(

@@ -75,8 +75,8 @@ String Mir::MirInstr::type_name() const {
         return "Call";
     case Mir::MirInstr::Type::TypeCast:
         return "TypeCast";
-    case Mir::MirInstr::Type::FieldAccess:
-        return "FieldAccess";
+    case Mir::MirInstr::Type::FieldRead:
+        return "FieldRead";
     case Mir::MirInstr::Type::ReadMem:
         return "ReadMem";
     case Mir::MirInstr::Type::WriteMem:
@@ -144,20 +144,6 @@ void add_jump_label_target(
     if ( mir.jump_table.size() <= static_cast<size_t>( label_id ) )
         mir.jump_table.resize( label_id + 1 );
     mir.jump_table[label_id] = instr_itr;
-}
-
-SymbolId symbol_id_of_lvalue( CompilerState &state, const AstNode &n ) {
-    if ( n.type == AT::Ident ) {
-        return n.symbol_id.value();
-    } else if ( n.type == AT::Paren && n.nodes->not_empty() ) {
-        return symbol_id_of_lvalue( state, n.nodes->first()->get() );
-    } else {
-        make_error_msg(
-            state,
-            "LValue is of unknown type. This is probably a compiler bug.",
-            n.ifi, RetCode::InternalError );
-        return 0;
-    }
 }
 
 Mir::FunctionInfo &get_func_signature( Mir &mir, SymbolId fn_symbol_id ) {
@@ -258,6 +244,41 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
 }
 
 void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
+                      Mir::VarId into_var );
+
+void write_mir_store_instr( CompilerState &state, Mir &mir, AstNode &node,
+                            Mir::VarId to_store ) {
+    if ( auto ident = Ident( node ) ) {
+        VarId variable = mir.var_map[ident.id->value()];
+        mir.instrs.put( MI{ MT::Mov, variable, to_store, 0, 0, node.ifi } );
+    } else if ( node.type == AT::Paren && node.nodes->not_empty() ) {
+        return write_mir_store_instr( state, mir, node.nodes->itr().get(),
+                                      to_store );
+    } else if ( auto access = FieldAccess( node ) ) {
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        mir.instrs.put( MI{ MT::FieldWrite, lhs_var, to_store, 0, 0, node.ifi,
+                            ArithType::None, 0, access.field_symbol } );
+    } else if ( auto access = IndirectAccess( node ) ) {
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        mir.instrs.put( MI{ MT::IndirectWrite, lhs_var, to_store, 0, 0,
+                            node.ifi, ArithType::None, 0,
+                            access.field_symbol } );
+    } else if ( auto access = ArrayAccess( node ) ) {
+        VarId lhs_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.lhs, lhs_var );
+        VarId idx_var = mir.next_var++;
+        write_mir_instr( state, mir, *access.idx, idx_var );
+        mir.instrs.put(
+            MI{ MT::ArrayWrite, lhs_var, idx_var, to_store, 0, node.ifi } );
+    } else if ( auto deref = PtrDeref( node ) ) {
+        VarId ptr_var = mir.next_var++;
+        write_mir_instr( state, mir, *deref.ptr, ptr_var );
+        mir.instrs.put( MI{ MT::WriteMem, ptr_var, to_store, 0, 0, node.ifi } );
+    }
+}
+void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                       Mir::VarId into_var ) {
     if ( auto fn_def = FunctionDef( node ) ) {
         // Label
@@ -356,10 +377,10 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
-        VarId variable =
-            mir.var_map[symbol_id_of_lvalue( state, *stmt.lvalue )];
-        // TODO update with L4 stuff
-        write_mir_instr( state, mir, *stmt.value, variable );
+
+        // We can just use into_var here, as it will be discarded anyways
+        write_mir_instr( state, mir, *stmt.value, into_var );
+        write_mir_store_instr( state, mir, *stmt.lvalue, into_var );
     } else if ( auto bin_op = BinOp( node ) ) {
         VarId tmp_lhs = mir.next_var++;
         VarId tmp_rhs = mir.next_var++;
@@ -524,7 +545,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
 
             // Assign dynamic array size and shift returned pointer
             mir.instrs.put(
-                MI{ MT::WriteMem, 0, ptr, count_var, 0, node.ifi } );
+                MI{ MT::WriteMem, ptr, count_var, 0, 0, node.ifi } );
             VarId shifted_ptr = mir.next_var++;
             mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_one, 0,
                                 node.ifi, ArithType::Add } );
@@ -537,45 +558,21 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto access = FieldAccess( node ) ) {
         VarId lhs_var = mir.next_var++;
         write_mir_instr( state, mir, *access.lhs, lhs_var );
-        mir.instrs.put( MI{ MT::FieldAccess, into_var, lhs_var, 0, 0, node.ifi,
+        mir.instrs.put( MI{ MT::FieldRead, into_var, lhs_var, 0, 0, node.ifi,
                             ArithType::None, 0, access.field_symbol } );
     } else if ( auto access = IndirectAccess( node ) ) {
         // Basically the same thing as normal field access
         VarId lhs_var = mir.next_var++;
         write_mir_instr( state, mir, *access.lhs, lhs_var );
-        mir.instrs.put( MI{ MT::IndirectAccess, into_var, lhs_var, 0, 0,
-                            node.ifi, ArithType::None, 0,
-                            access.field_symbol } );
+        mir.instrs.put( MI{ MT::IndirectRead, into_var, lhs_var, 0, 0, node.ifi,
+                            ArithType::None, 0, access.field_symbol } );
     } else if ( auto access = ArrayAccess( node ) ) {
-        // First base address calculation
         VarId lhs_var = mir.next_var++;
         write_mir_instr( state, mir, *access.lhs, lhs_var );
-        auto array_type = TypeSpecifier( *access.lhs );
-        if ( array_type.type != TypeSpecifier::Type::Array ) {
-            make_error_msg( state, "Array access expects array type.", node.ifi,
-                            RetCode::SemanticError );
-            return;
-        }
-
-        // Address calculation
         VarId idx_var = mir.next_var++;
         write_mir_instr( state, mir, *access.idx, idx_var );
-        i32 elem_offset = get_type_size( mir, *array_type.sub );
-        VarId factor_var = mir.next_var++;
         mir.instrs.put(
-            MI{ MT::Const, factor_var, 0, 0, elem_offset, node.ifi } );
-        VarId prod_var = mir.next_var++;
-        mir.instrs.put( MI{ MT::BinOp, prod_var, idx_var, factor_var, 0,
-                            node.ifi, ArithType::Mul } );
-        VarId final_addr = mir.next_var++;
-        mir.instrs.put( MI{ MT::BinOp, final_addr, lhs_var, prod_var, 0,
-                            node.ifi, ArithType::Add } );
-
-        if ( array_type.sub->type != TypeSpecifier::Type::Struct ) {
-            // Actual access, if it is a small type
-            mir.instrs.put(
-                MI{ MT::ReadMem, into_var, final_addr, 0, 0, node.ifi } );
-        }
+            MI{ MT::ArrayRead, into_var, lhs_var, idx_var, 0, node.ifi } );
     } else if ( auto ptr_deref = PtrDeref( node ) ) {
         VarId addr = mir.next_var++;
         write_mir_instr( state, mir, *access.idx, addr );

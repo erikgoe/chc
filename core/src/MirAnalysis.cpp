@@ -215,7 +215,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             if ( !match_types( mir.type_of( instr.result ),
                                instr.type_constraint, instr.ifi, "type cast" ) )
                 return;
-        } else if ( instr.type == MT::FieldAccess ) {
+        } else if ( instr.type == MT::FieldRead ) {
             auto struct_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
                 make_error_msg(
@@ -238,7 +238,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
             mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
-        } else if ( instr.type == MT::IndirectAccess ) {
+        } else if ( instr.type == MT::IndirectRead ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
                 make_error_msg( state,
