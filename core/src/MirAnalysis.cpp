@@ -115,9 +115,9 @@ void type_checking( CompilerState &state, Mir &mir ) {
     auto match_types = [&]( Mir::TypeId &lhs, Mir::TypeId &rhs,
                             const InFileInfo &ifi, const String &hint = "" ) {
         if ( lhs != rhs ) {
-            if ( rhs == 0 || rhs == Mir::TYPE_ANY ) {
+            if ( lhs == 0 || lhs == Mir::TYPE_ANY ) {
                 lhs = rhs;
-            } else if ( lhs == 0 || lhs == Mir::TYPE_ANY ) {
+            } else if ( rhs == 0 || rhs == Mir::TYPE_ANY ) {
                 rhs = lhs;
             } else {
                 make_error_msg(
@@ -136,8 +136,9 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                instr.type_constraint, instr.ifi ) )
                 return;
         } else if ( instr.type == MT::BinOp ) {
-            if ( mir.type_of( instr.p0 ) == 0 ||
-                 mir.type_of( instr.p1 ) == 0 ) {
+            if ( ( mir.type_of( instr.p0 ) == 0 ||
+                   mir.type_of( instr.p1 ) == 0 ) &&
+                 instr.type_constraint != Mir::TYPE_ANY ) {
                 make_error_msg( state, "Variable untyped", instr.ifi,
                                 RetCode::SemanticError );
                 return;

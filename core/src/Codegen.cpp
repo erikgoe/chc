@@ -606,7 +606,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
 
             auto count_reg = make_available( instr.p1, instr.ifi );
-            put_src_reg( AOC::IMul, count_reg, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
             make_available_in( instr.p0, HwReg::edx, instr.ifi );
             // eax now contains byte offset and edx contains base address.
 
@@ -615,9 +615,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                      instr.ifi );
 
             // Need to reload base address, because edx will be overwritten
-            make_available_in( instr.p0, HwReg::edx, instr.ifi );
+            auto base_reg = make_available( instr.p0, instr.ifi );
             // Final address calculation
-            put_reg_reg( AOC::Add64, HwReg::eax, HwReg::edx, instr.ifi );
+            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
 
             if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
                  TypeSpecifier::Type::Struct ) {
@@ -647,6 +647,14 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             auto count_reg = make_available( instr.p0, instr.ifi );
             put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
             // Here instr.result has a special role, as it is also a parameter.
+            make_available_in( instr.result, HwReg::edx, instr.ifi );
+            // eax now contains byte offset and edx contains base address.
+
+            // Do bounds checking
+            put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
+                     instr.ifi );
+
+            // Need to reload base address, because edx will be overwritten
             auto base_reg = make_available( instr.result, instr.ifi );
             put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
 

@@ -199,7 +199,7 @@ bool is_function_body( const AstNode &node ) {
 }
 
 bool is_comma_list_element( const AstNode &node ) {
-    return is_expr( node ) || node.type == AT::DeclUninit;
+    return is_expr( node ) || node.type == AT::DeclUninit || is_type( node );
 }
 
 bool is_call_ident( const AstNode &node ) {
@@ -390,8 +390,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             }
             if ( is_type( lhs ) && rhs.type == AT::Bracket &&
                  rhs.nodes->empty() ) {
-                // Remove two consumed elements.
-                itr.erase_self();
+                // Remove one consumed element.
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() =

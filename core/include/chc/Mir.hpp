@@ -113,6 +113,7 @@ struct Mir {
         map_to_type_spec[TYPE_ANY] = TypeSpecifier( "" );
         map_to_type_spec[TYPE_INT] = TypeSpecifier( "int" );
         map_to_type_spec[TYPE_BOOL] = TypeSpecifier( "bool" );
+        next_type = TYPE_BOOL + 1;
 
         alloc_label = next_label++;
         check_array_label = next_label++;

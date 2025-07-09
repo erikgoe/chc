@@ -236,8 +236,12 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
 
         // Match AllocCall-labels to new symbols
         mir.func_label_to_symbol[mir.alloc_label] = semantic_data.next_symbol++;
-        get_func_signature( mir, mir.func_label_to_symbol[mir.alloc_label] )
-            .label = mir.alloc_label;
+        auto &tmp_fn_info = get_func_signature(
+            mir, mir.func_label_to_symbol[mir.alloc_label] );
+        tmp_fn_info.label = mir.alloc_label;
+        tmp_fn_info.arg_types.push_back( Mir::TYPE_INT );
+        tmp_fn_info.arg_types.push_back( Mir::TYPE_INT );
+        tmp_fn_info.ret_type = Mir::TYPE_INT;
         mir.func_label_to_symbol[mir.check_array_label] =
             semantic_data.next_symbol++;
         get_func_signature( mir,
@@ -387,7 +391,6 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
-
         // We can just use into_var here, as it will be discarded anyways
         write_mir_instr( state, mir, *stmt.value, into_var );
         write_mir_store_instr( state, mir, *stmt.lvalue, into_var );
@@ -503,15 +506,16 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( auto call = AllocCall( node ) ) {
         auto itr = call.args->itr();
         // Calculate type size
-        auto shr_type_spec = TypeSpecifier::make_pointer_to(
-            std::make_shared<TypeSpecifier>( itr.get() ) );
-        auto type_id = spec_to_type( mir, *shr_type_spec );
-        i32 type_size = get_type_size( mir, *shr_type_spec );
+        i32 type_size = get_type_size( mir, TypeSpecifier( itr.get() ) );
         VarId type_size_var = mir.next_var++;
         mir.instrs.put( MI{ MT::Const, type_size_var, 0, 0, type_size, node.ifi,
                             ArithType::None, Mir::TYPE_INT } );
 
         if ( call.fn_symbol == "alloc" ) {
+            auto shr_type_spec = TypeSpecifier::make_pointer_to(
+                std::make_shared<TypeSpecifier>( itr.get() ) );
+            auto type_id = spec_to_type( mir, *shr_type_spec );
+
             // Allocate simply one element.
             VarId count_var = mir.next_var++;
             mir.instrs.put( MI{ MT::Const, count_var, 0, 0, 1, node.ifi,
@@ -531,6 +535,10 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             mir.instrs.put( MI{ MT::TypeCast, into_var, tmp, 0, mir.alloc_label,
                                 node.ifi, ArithType::None, type_id } );
         } else if ( call.fn_symbol == "alloc_array" ) {
+            auto shr_type_spec = TypeSpecifier::make_array_of(
+                std::make_shared<TypeSpecifier>( itr.get() ) );
+            auto type_id = spec_to_type( mir, *shr_type_spec );
+
             // Evaluate element count argument
             VarId tmp_count = mir.next_var++;
             VarId tmp_one = mir.next_var++;
@@ -540,7 +548,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             mir.instrs.put( MI{ MT::Const, tmp_one, 0, 0, 1, node.ifi,
                                 ArithType::None, Mir::TYPE_INT } );
             mir.instrs.put( MI{ MT::BinOp, count_var, tmp_count, tmp_one, 0,
-                                node.ifi, ArithType::Add } );
+                                node.ifi, ArithType::Add, Mir::TYPE_ANY } );
 
             // Put parameters in reverse order
             mir.instrs.put( MI{ MT::Arg, 0, type_size_var, 0, mir.alloc_label,
@@ -558,7 +566,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                 MI{ MT::WriteMem, ptr, tmp_count, 0, 0, node.ifi } );
             VarId shifted_ptr = mir.next_var++;
             mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_one, 0,
-                                node.ifi, ArithType::Add } );
+                                node.ifi, ArithType::Add, Mir::TYPE_ANY } );
 
             // Cast to requested type
             mir.instrs.put( MI{ MT::TypeCast, into_var, shifted_ptr, 0,

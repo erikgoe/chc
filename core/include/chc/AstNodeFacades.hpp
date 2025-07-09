@@ -159,6 +159,13 @@ public:
         ret->sub = sub;
         return ret;
     }
+    static std::shared_ptr<TypeSpecifier> make_array_of(
+        const std::shared_ptr<TypeSpecifier> &sub ) {
+        auto ret = std::make_shared<TypeSpecifier>();
+        ret->type = Type::Array;
+        ret->sub = sub;
+        return ret;
+    }
 
     enum class Type { None, Prim, Ptr, Array, Struct, count } type = Type::None;
     std::shared_ptr<TypeSpecifier> sub;
