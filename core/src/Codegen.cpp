@@ -175,7 +175,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             HwReg hw_reg = to_hw_reg( reg );
             if ( hw_reg != dest_reg ) {
                 // Copy into destination register.
-                put_reg_reg( AOC::Mov, dest_reg, hw_reg, ifi );
+                put_reg_reg( AOC::Mov64, dest_reg, hw_reg, ifi );
                 reg_states[dest_reg].written_to = true;
             }
             return;
@@ -198,7 +198,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         if ( reg < virtual_stack_start_reg ) {
             if ( to_hw_reg( reg ) != src_reg ) {
                 // Copy back into original register.
-                put_reg_reg( AOC::Mov, to_hw_reg( reg ), src_reg, ifi );
+                put_reg_reg( AOC::Mov64, to_hw_reg( reg ), src_reg, ifi );
                 reg_states[to_hw_reg( reg )].written_to = true;
             }
             return;
@@ -295,7 +295,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_reg( AOC::Pop, HwReg::eax, no_ifi );
     put_reg( AOC::Pop, HwReg::eax, no_ifi );
 
-    put_reg_reg( AOC::Mov, HwReg::edi, HwReg::eax, no_ifi );
+    put_reg_reg( AOC::Mov64, HwReg::edi, HwReg::eax, no_ifi );
     put_reg_imm( AOC::MovConst, HwReg::eax, 0x3c, no_ifi );
     put_empty( AOC::Syscall, no_ifi );
 
@@ -304,6 +304,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_str( AOC::Extern, "getchar", no_ifi );
     put_str( AOC::Extern, "fflush", no_ifi );
     put_str( AOC::Extern, "stdout", no_ifi );
+    put_str( AOC::Extern, "calloc", no_ifi );
     for ( auto b : semantic_data.build_in_symbols ) {
         SymbolId symbol = b.second;
         String label = get_fn_label( mir, b.second );
@@ -312,10 +313,10 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         put_comment( "wrapper: " + b.first, no_ifi );
         put_label( label, no_ifi );
         put_imm( AOC::Enter, 0, no_ifi );
-        bool required_saving_edi = false;
+        bool requires_saving_edi = false;
         if ( mir.func_map[symbol].arg_types.size() == 1 || b.first == "flush" )
-            required_saving_edi = true;
-        if ( required_saving_edi ) {
+            requires_saving_edi = true;
+        if ( requires_saving_edi ) {
             // One parameter (alignment cancels out with saved register)
             put_src_reg( AOC::Push, HwReg::edi, no_ifi );
         } else {
@@ -343,7 +344,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         }
 
         // Restore saved register
-        if ( required_saving_edi ) {
+        if ( requires_saving_edi ) {
             // One parameter
             put_reg( AOC::Pop, HwReg::edi, no_ifi );
         } else {
@@ -359,6 +360,53 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         put_empty( AOC::Leave, no_ifi );
         put_empty( AOC::Ret, no_ifi );
     }
+
+    // Explicit calloc wrapper
+    put_comment( "wrapper: calloc", no_ifi );
+    put_label( "fn" + to_string( mir.alloc_label ), no_ifi );
+    put_imm( AOC::Enter, 0, no_ifi );
+    // Does not need alignment adjustment
+    put_src_reg( AOC::Push, HwReg::ecx, no_ifi ); // caller-saved
+    put_src_reg( AOC::Push, HwReg::r8d, no_ifi ); // caller-saved
+    put_src_reg( AOC::Push, HwReg::r9d, no_ifi ); // caller-saved
+    put_src_reg( AOC::Push, HwReg::r11d, no_ifi ); // caller-saved
+    put_src_reg( AOC::Push, HwReg::edi, no_ifi );
+    put_src_reg( AOC::Push, HwReg::esi, no_ifi );
+    size_t p0_offset = 16;
+    put_reg_imm( AOC::MovFromStack64, HwReg::edi, p0_offset, no_ifi );
+    put_reg_imm( AOC::MovFromStack64, HwReg::esi, p0_offset + 8, no_ifi );
+    put_str( AOC::Call, "calloc", no_ifi );
+    put_reg( AOC::Pop, HwReg::esi, no_ifi );
+    put_reg( AOC::Pop, HwReg::edi, no_ifi );
+    put_reg( AOC::Pop, HwReg::r11d, no_ifi );
+    put_reg( AOC::Pop, HwReg::r9d, no_ifi );
+    put_reg( AOC::Pop, HwReg::r8d, no_ifi );
+    put_reg( AOC::Pop, HwReg::ecx, no_ifi );
+    put_empty( AOC::Leave, no_ifi );
+    put_empty( AOC::Ret, no_ifi );
+
+    // Explicit built-in array check function
+    // Expect an array pointer in rdx and byte-index in rax
+    put_comment( "built-in array check", no_ifi );
+    put_label( "fn" + to_string( mir.check_array_label ), no_ifi );
+    put_imm( AOC::Enter, 0, no_ifi );
+    // `size = *(edx-8); if eax>=size || 0>eax { sigabrt }`
+    put_reg_imm( AOC::Sub64Const, HwReg::edx, 8, no_ifi );
+    put_reg_reg( AOC::MovIndrFrom, HwReg::edx, HwReg::edx, no_ifi );
+    put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edx, no_ifi );
+    put_str( AOC::Jnb, "sigabrt", no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
+    put_reg_reg( AOC::Cmp, HwReg::edx, HwReg::eax, no_ifi );
+    put_str( AOC::Jnbe, "sigabrt", no_ifi );
+    put_empty( AOC::Leave, no_ifi );
+    put_empty( AOC::Ret, no_ifi );
+
+    put_label( "sigabrt", no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::eax, 62, no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::esi, 6, no_ifi );
+    put_empty( AOC::Syscall, no_ifi );
+
 
     // Add instructions for all functions
 #ifdef AMS_CODE_LINE_COMMENTS
@@ -453,10 +501,10 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                         instr.subtype == ArithType::Shr ) {
                 // Because shifts must go through ecx, temporarily swap ecx and
                 // edx (which is always free).
-                put_reg_reg( AOC::Mov, HwReg::edx, HwReg::ecx, instr.ifi );
-                put_reg_reg( AOC::Mov, HwReg::ecx, rhs_reg, instr.ifi );
+                put_reg_reg( AOC::Mov64, HwReg::edx, HwReg::ecx, instr.ifi );
+                put_reg_reg( AOC::Mov64, HwReg::ecx, rhs_reg, instr.ifi );
                 put_reg( aoc, HwReg::eax, instr.ifi );
-                put_reg_reg( AOC::Mov, HwReg::ecx, HwReg::edx, instr.ifi );
+                put_reg_reg( AOC::Mov64, HwReg::ecx, HwReg::edx, instr.ifi );
             } else {
                 put_reg_reg( aoc, HwReg::eax, rhs_reg, instr.ifi );
             }
@@ -513,7 +561,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                      instr.ifi );
 
             // Temporarily memorize result
-            put_reg_reg( AOC::Mov, HwReg::r10d, HwReg::eax, instr.ifi );
+            put_reg_reg( AOC::Mov64, HwReg::r10d, HwReg::eax, instr.ifi );
 
             // Pop arguments from stack by decrementing esp
             put_imm( AOC::AddSp, callee_fn_info.arg_types.size() * 8,
@@ -558,9 +606,18 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
 
             auto count_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
-            auto base_reg = make_available( instr.p0, instr.ifi );
-            put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
+            put_src_reg( AOC::IMul, count_reg, instr.ifi );
+            make_available_in( instr.p0, HwReg::edx, instr.ifi );
+            // eax now contains byte offset and edx contains base address.
+
+            // Do bounds checking
+            put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
+                     instr.ifi );
+
+            // Need to reload base address, because edx will be overwritten
+            make_available_in( instr.p0, HwReg::edx, instr.ifi );
+            // Final address calculation
+            put_reg_reg( AOC::Add64, HwReg::eax, HwReg::edx, instr.ifi );
 
             if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
                  TypeSpecifier::Type::Struct ) {
@@ -746,11 +803,11 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::MovSymbolWithRip64 ) {
             put_asm( "movq " + op.str + "(%rip), " + to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::MovIndrTo ) {
+            put_asm( "movq " + to_reg_64_str( op.src ) + ", 0(" +
+                     to_reg_64_str( op.dest ) + ")" );
+        } else if ( op.opcode == AOC::MovIndrFrom ) {
             put_asm( "movq 0(" + to_reg_64_str( op.src ) + "), " +
                      to_reg_64_str( op.dest ) );
-        } else if ( op.opcode == AOC::MovIndrFrom ) {
-            put_asm( "movq " + to_reg_64_str( op.src ) + ", +(" +
-                     to_reg_64_str( op.dest ) + ")" );
         } else if ( op.opcode == AOC::Syscall ) {
             put_asm( "syscall" );
         } else if ( op.opcode == AOC::Add ) {
@@ -761,6 +818,9 @@ void generate_asm_text_x86( CompilerState &state,
             make_reg_reg_op( "subl", op );
         } else if ( op.opcode == AOC::Sub64 ) {
             make_reg_reg_op_64( "subq", op );
+        } else if ( op.opcode == AOC::Sub64Const ) {
+            put_asm( "subq $" + to_string( op.imm ) + ", " +
+                     to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::IMul ) {
             make_reg_reg_op( "imull", op );
         } else if ( op.opcode == AOC::IDiv ) {
@@ -787,6 +847,10 @@ void generate_asm_text_x86( CompilerState &state,
             put_asm( "jmp " + op.str );
         } else if ( op.opcode == AOC::Jz ) {
             put_asm( "jz " + op.str );
+        } else if ( op.opcode == AOC::Jnb ) {
+            put_asm( "jnb " + op.str );
+        } else if ( op.opcode == AOC::Jnbe ) {
+            put_asm( "jnbe " + op.str );
         } else if ( op.opcode == AOC::Cmp ) {
             make_reg_reg_op( "cmp", op );
         } else if ( op.opcode == AOC::Ret ) {

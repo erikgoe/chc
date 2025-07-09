@@ -57,6 +57,7 @@ struct Assembly_x86 {
         Add64,
         Sub,
         Sub64,
+        Sub64Const, // "subq $<imm>, <dest>"
         IMul,
         IDiv,
         Cltd,
@@ -70,6 +71,8 @@ struct Assembly_x86 {
         SetBelowEq,
         Jmp,
         Jz,
+        Jnb,
+        Jnbe,
         Cmp,
         Ret,
         Push,

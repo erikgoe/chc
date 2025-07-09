@@ -380,7 +380,8 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                     make_merged_node( AT::StructType, *rhs.tok, { rhs } );
                 return true;
             }
-            if ( is_type( lhs ) && rhs.tok->content == "*" ) {
+            if ( is_type( lhs ) && rhs.type == AT::Token &&
+                 rhs.tok->content == "*" ) {
                 // Remove one consumed element.
                 itr.erase_self();
                 // Replace with merged token
@@ -440,7 +441,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                          lhs.tok->content == "alloc_array" ) {
                         // Is special function with type-parameter
                         itr.get() = make_merged_node( AT::AllocCall, *lhs.tok,
-                                                      { lhs, mid } );
+                                                      { mid } );
                         return true;
                     } else {
                         // Special functions were parsed like keywords.
@@ -896,7 +897,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 }
                 if ( parent.type == AT::AllocCall ) {
                     auto &comma_list = unwrap_comma_list_nodes( node );
-                    auto fn_ident = parent.nodes->itr().get().tok->content;
+                    auto fn_ident = parent.tok->content;
                     if ( fn_ident == "alloc_array" &&
                          ( comma_list.length() != 2 ||
                            !is_type( comma_list.itr().get() ) ||

@@ -520,8 +520,8 @@ public:
         matches = to_wrap.type == AstNode::Type::AllocCall;
         if ( matches ) {
             auto itr = to_wrap.nodes->itr();
-            fn_symbol = itr.get().tok->content;
-            auto &paren_content = itr.skip( 1 ).get().nodes;
+            fn_symbol = to_wrap.tok->content;
+            auto &paren_content = itr.get().nodes;
             if ( paren_content->empty() ||
                  paren_content->itr().get().type != AstNode::Type::CommaList ) {
                 args = &*paren_content;

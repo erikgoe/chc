@@ -83,7 +83,8 @@ struct Mir {
     std::map<TypeId, TypeSpecifier> map_to_type_spec;
 
     i32 next_label = 1;
-    i32 alloc_label; // TODO add wrapper function
+    i32 alloc_label;
+    i32 check_array_label;
     std::deque<i32> continue_stack;
     std::deque<i32> break_stack;
     TypeId curr_fn_return_type;
@@ -114,6 +115,7 @@ struct Mir {
         map_to_type_spec[TYPE_BOOL] = TypeSpecifier( "bool" );
 
         alloc_label = next_label++;
+        check_array_label = next_label++;
     }
 };
 

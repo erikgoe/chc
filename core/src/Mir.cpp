@@ -234,6 +234,16 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
         make_build_in_type( "read", Mir::TYPE_INT, {} );
         make_build_in_type( "flush", Mir::TYPE_INT, {} );
 
+        // Match AllocCall-labels to new symbols
+        mir.func_label_to_symbol[mir.alloc_label] = semantic_data.next_symbol++;
+        get_func_signature( mir, mir.func_label_to_symbol[mir.alloc_label] )
+            .label = mir.alloc_label;
+        mir.func_label_to_symbol[mir.check_array_label] =
+            semantic_data.next_symbol++;
+        get_func_signature( mir,
+                            mir.func_label_to_symbol[mir.check_array_label] )
+            .label = mir.check_array_label;
+
         // Recurse into function definitions
         auto itr = node.nodes->itr();
         while ( itr ) {
@@ -545,7 +555,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
 
             // Assign dynamic array size and shift returned pointer
             mir.instrs.put(
-                MI{ MT::WriteMem, ptr, count_var, 0, 0, node.ifi } );
+                MI{ MT::WriteMem, ptr, tmp_count, 0, 0, node.ifi } );
             VarId shifted_ptr = mir.next_var++;
             mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_one, 0,
                                 node.ifi, ArithType::Add } );
@@ -575,7 +585,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             MI{ MT::ArrayRead, into_var, lhs_var, idx_var, 0, node.ifi } );
     } else if ( auto ptr_deref = PtrDeref( node ) ) {
         VarId addr = mir.next_var++;
-        write_mir_instr( state, mir, *access.idx, addr );
+        write_mir_instr( state, mir, *ptr_deref.ptr, addr );
         mir.instrs.put( MI{ MT::ReadMem, into_var, addr, 0, 0, node.ifi } );
     } else if ( node.type == AstNode::Type::GlobalScope ) {
         auto itr = node.nodes->itr();
@@ -643,6 +653,8 @@ bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
            instr.type == MT::JZero || instr.type == MT::Label ||
            instr.type == MT::Func || instr.type == MT::Arg ||
            instr.type == MT::Param || instr.type == MT::Call ||
+           instr.type == MT::FieldWrite || instr.type == MT::IndirectWrite ||
+           instr.type == MT::ArrayWrite || instr.type == MT::WriteMem ||
            ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
                                           instr.subtype == ArithType::Mod ) );
 }
