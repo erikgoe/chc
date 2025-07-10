@@ -138,7 +138,7 @@ public:
     }
     bool operator==( const TypeSpecifier &other ) const {
         return type == other.type && ( !sub || *sub == *other.sub ) &&
-               name == other.name;
+               ( name == other.name || name.empty() || other.name.empty() );
     }
     bool operator!=( const TypeSpecifier &other ) const {
         return !( *this == other );
@@ -147,7 +147,7 @@ public:
         if ( type != other.type )
             return type < other.type;
         if ( type == Type::Prim || type == Type::Struct ) {
-            return name < other.name;
+            return name.empty() || name < other.name;
         } else {
             return *sub < *other.sub;
         }
