@@ -1000,7 +1000,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                            AT::NullConst ) ) {
                     make_error_msg(
                         state, "Directly de-referencing NULL is not allowed!",
-                        node.ifi, RetCode::SyntaxError );
+                        node.ifi, RetCode::SemanticError );
                 }
             }
             return false;
