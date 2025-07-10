@@ -585,6 +585,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             writeback_opt( instr.result, src_reg, instr.ifi );
         } else if ( instr.type == MT::FieldRead ||
                     instr.type == MT::IndirectRead ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.result )] );
             size_t offset = get_struct_field_offset(
                 mir, mir.var_struct_symbols[instr.p0], instr.name );
 
@@ -595,8 +597,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
                  TypeSpecifier::Type::Struct ) {
                 // Small types must be loaded from memory
-                put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax,
-                             instr.ifi );
+                if ( type_size > 4 ) {
+                    put_reg_reg( AOC::MovIndrFrom64, HwReg::eax, HwReg::eax,
+                                 instr.ifi );
+                } else {
+                    put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax,
+                                 instr.ifi );
+                }
             }
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::ArrayRead ) {
@@ -634,6 +641,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::FieldWrite ||
                     instr.type == MT::IndirectWrite ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.p0 )] );
             // Here instr.result has a special role, as it is also a parameter.
             size_t offset = get_struct_field_offset(
                 mir, mir.var_struct_symbols[instr.result], instr.name );
@@ -643,7 +652,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
 
             auto to_store_reg = make_available( instr.p0, instr.ifi );
-            put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg, instr.ifi );
+            if ( type_size > 4 ) {
+                put_reg_reg( AOC::MovIndrTo64, HwReg::eax, to_store_reg,
+                             instr.ifi );
+            } else {
+                put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg,
+                             instr.ifi );
+            }
         } else if ( instr.type == MT::ArrayWrite ) {
             size_t type_size = get_type_size(
                 mir, mir.map_to_type_spec[mir.type_of( instr.p1 )] );
@@ -675,13 +690,29 @@ void generate_code_x86( CompilerState &state, const String &original_source,
                              instr.ifi );
             }
         } else if ( instr.type == MT::ReadMem ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.p0 )] );
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
-            put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax, instr.ifi );
+
+            if ( type_size > 4 ) {
+                put_reg_reg( AOC::MovIndrFrom64, HwReg::eax, HwReg::eax,
+                             instr.ifi );
+            } else {
+                put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax,
+                             instr.ifi );
+            }
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::WriteMem ) {
+            size_t type_size = get_type_size(
+                mir, mir.map_to_type_spec[mir.type_of( instr.p0 )] );
             auto val_reg = make_available( instr.p0, instr.ifi );
             make_available_in( instr.result, HwReg::eax, instr.ifi );
-            put_reg_reg( AOC::MovIndrTo, HwReg::eax, val_reg, instr.ifi );
+
+            if ( type_size > 4 ) {
+                put_reg_reg( AOC::MovIndrTo64, HwReg::eax, val_reg, instr.ifi );
+            } else {
+                put_reg_reg( AOC::MovIndrTo, HwReg::eax, val_reg, instr.ifi );
+            }
         } else if ( instr.type != MT::Nop ) {
             // Unknown instruction
             make_error_msg(

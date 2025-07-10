@@ -232,6 +232,12 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
                 std::make_pair( decl.type, decl.symbol ) );
             itr.skip_self( 1 );
         }
+
+        // Allocate a new type
+        auto type = TypeSpecifier::make_struct_type( struct_def.struct_symbol );
+        type->struct_symbol_id = struct_def.struct_symbol_id;
+        spec_to_type( mir, *type );
+
     } else if ( node.type == AT::GlobalScope ) {
         // Add built-in functions
         auto make_build_in_type = [&]( const String &symbol, TypeId ret_type,
@@ -260,7 +266,7 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
                             mir.func_label_to_symbol[mir.check_array_label] )
             .label = mir.check_array_label;
 
-        // Recurse into function definitions
+        // Recurse into definitions
         auto itr = node.nodes->itr();
         while ( itr ) {
             discover_all_signatures( state, mir, semantic_data, itr.get() );

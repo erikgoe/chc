@@ -166,6 +166,13 @@ public:
         ret->sub = sub;
         return ret;
     }
+    static std::shared_ptr<TypeSpecifier> make_struct_type(
+        const String &name ) {
+        auto ret = std::make_shared<TypeSpecifier>();
+        ret->type = Type::Struct;
+        ret->name = name;
+        return ret;
+    }
 
     enum class Type { None, Prim, Ptr, Array, Struct, count } type = Type::None;
     std::shared_ptr<TypeSpecifier> sub;

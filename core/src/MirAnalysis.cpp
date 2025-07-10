@@ -236,9 +236,32 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 instr.ifi, RetCode::SemanticError );
                 return;
             }
-            mir.var_struct_symbols[instr.result] =
+            mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
             mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
+        } else if ( instr.type == MT::FieldWrite ) {
+            auto struct_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
+            if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
+                make_error_msg(
+                    state,
+                    "Field access on variable, which is not a struct-object.",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto &fields =
+                mir.struct_map[struct_ts.struct_symbol_id->value()].fields;
+            auto field_itr = std::find_if(
+                fields.begin(), fields.end(),
+                [&]( auto &&pair ) { return pair.second == instr.name; } );
+            if ( field_itr == fields.end() ) {
+                make_error_msg( state,
+                                "Identifier does not name field of struct.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.var_struct_symbols[instr.result] =
+                struct_ts.struct_symbol_id->value();
+            mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
         } else if ( instr.type == MT::IndirectRead ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
@@ -267,9 +290,40 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 instr.ifi, RetCode::SemanticError );
                 return;
             }
-            mir.var_struct_symbols[instr.result] =
+            mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
             mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
+        } else if ( instr.type == MT::IndirectWrite ) {
+            auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
+            if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
+                make_error_msg( state,
+                                "Indirect field access on variable, which is "
+                                "not a pointer.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto struct_ts = *ptr_ts.sub;
+            if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
+                make_error_msg(
+                    state,
+                    "Field access on variable, which is not a struct-object.",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto &fields =
+                mir.struct_map[struct_ts.struct_symbol_id->value()].fields;
+            auto field_itr = std::find_if(
+                fields.begin(), fields.end(),
+                [&]( auto &&pair ) { return pair.second == instr.name; } );
+            if ( field_itr == fields.end() ) {
+                make_error_msg( state,
+                                "Identifier does not name field of struct.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.var_struct_symbols[instr.result] =
+                struct_ts.struct_symbol_id->value();
+            mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
         }
     } );
 }

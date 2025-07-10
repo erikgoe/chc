@@ -230,6 +230,11 @@ void analyze_symbol_definitions( CompilerState &state,
             // Normal variable declaration
             SymbolId new_id = match_new_symbol( decl.symbol, node.ifi );
             *decl.symbol_id = new_id;
+
+            // Also do type symbol analysis
+            if ( decl.type && decl.type->type == TypeSpecifier::Type::Struct ) {
+                *decl.type->struct_symbol_id = struct_map[decl.type->name].id;
+            }
         } else if ( auto ident = Ident( node ) ) {
             if ( !*ident.id ) {
                 if ( symbol_map.find( ident.symbol ) != symbol_map.end() ) {
@@ -379,7 +384,7 @@ void check_for_recursive_struct_types( CompilerState &state,
                             s.second.ifi, RetCode::SemanticError );
                         return;
                     }
-                    recurse_check( struct_map[s.first] );
+                    recurse_check( struct_map[f.first->name] );
                 }
             }
         };
