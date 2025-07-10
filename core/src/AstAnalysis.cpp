@@ -344,6 +344,10 @@ void analyze_symbol_definitions( CompilerState &state,
                                     RetCode::SemanticError );
                 }
             }
+        } else if ( auto access = IndirectAccess( node ) ) {
+            analyze_node( *access.lhs );
+        } else if ( auto access = FieldAccess( node ) ) {
+            analyze_node( *access.lhs );
         } else {
             // Normal nodes
             // Simply recurse into subnodes
@@ -398,6 +402,10 @@ void basic_semantic_checks( CompilerState &state, SemanticData &semantic_data,
             state, *root_node.nodes, root_node,
             []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
                 auto node = itr.get();
+                if ( parent.type == AT::StructType ||
+                     parent.type == AT::FieldAccess ||
+                     parent.type == AT::IndirectAccess )
+                    return false;
                 if ( node.type == AT::Ident && !node.symbol_id.has_value() )
                     make_error_msg( state, "Could not calculate id for symbol.",
                                     node.ifi, RetCode::SemanticError );

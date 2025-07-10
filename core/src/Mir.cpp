@@ -227,7 +227,7 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
         // Fields
         auto itr = struct_def.fields->itr();
         while ( itr ) {
-            auto decl = DeclUninit( itr.get() );
+            auto decl = DeclUninit( itr.get().nodes->itr().get() );
             struct_info.fields.push_back(
                 std::make_pair( decl.type, decl.symbol ) );
             itr.skip_self( 1 );
