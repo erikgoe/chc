@@ -305,6 +305,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_str( AOC::Extern, "fflush", no_ifi );
     put_str( AOC::Extern, "stdout", no_ifi );
     put_str( AOC::Extern, "calloc", no_ifi );
+    put_str( AOC::Extern, "abort", no_ifi );
     for ( auto b : semantic_data.build_in_symbols ) {
         SymbolId symbol = b.second;
         String label = get_fn_label( mir, b.second );
@@ -402,10 +403,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_empty( AOC::Ret, no_ifi );
 
     put_label( "sigabrt", no_ifi );
-    put_reg_imm( AOC::MovConst, HwReg::eax, 62, no_ifi );
-    put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
-    put_reg_imm( AOC::MovConst, HwReg::esi, 6, no_ifi );
-    put_empty( AOC::Syscall, no_ifi );
+    put_str( AOC::Call, "abort", no_ifi );
 
 
     // Add instructions for all functions
