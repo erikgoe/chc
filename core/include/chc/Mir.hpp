@@ -53,6 +53,7 @@ struct Mir {
         ArithType subtype = ArithType::None;
         TypeId type_constraint = 0; // also to calculate type size
         String name; // For field access
+        bool use_64bit = false;
 
         std::set<VarId> live;
         std::set<VarId> needed; // Needed variables

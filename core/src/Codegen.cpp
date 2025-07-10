@@ -386,7 +386,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_empty( AOC::Ret, no_ifi );
 
     // Explicit built-in array check function
-    // Expect an array pointer in rdx and byte-index in rax
+    // Expect an array pointer in rdx and element-index in rax
     put_comment( "built-in array check", no_ifi );
     put_label( "fn" + to_string( mir.check_array_label ), no_ifi );
     put_imm( AOC::Enter, 0, no_ifi );
@@ -441,7 +441,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             AOC aoc;
             switch ( instr.subtype ) {
             case ArithType::Add:
-                aoc = AOC::Add;
+                aoc = instr.use_64bit ? AOC::Add64 : AOC::Add;
                 break;
             case ArithType::Sub:
                 aoc = AOC::Sub;
@@ -603,27 +603,33 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             size_t type_size = get_type_size(
                 mir, mir.map_to_type_spec[mir.type_of( instr.result )] );
             type_size = std::max<size_t>( type_size, 1 ); // No zero alloc
-            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
 
-            auto count_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
+            make_available_in( instr.p1, HwReg::eax, instr.ifi );
             make_available_in( instr.p0, HwReg::edx, instr.ifi );
-            // eax now contains byte offset and edx contains base address.
+            // eax now contains elem-offset and edx contains base address.
 
             // Do bounds checking
             put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
                      instr.ifi );
+            // Later need to reload base address, because edx was overwritten
 
-            // Need to reload base address, because edx will be overwritten
-            auto base_reg = make_available( instr.p0, instr.ifi );
             // Final address calculation
+            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
+            auto count_reg = make_available( instr.p1, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
+            auto base_reg = make_available( instr.p0, instr.ifi );
             put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
 
             if ( mir.map_to_type_spec[mir.type_of( instr.result )].type !=
                  TypeSpecifier::Type::Struct ) {
                 // Small types must be loaded from memory
-                put_reg_reg( AOC::MovIndrTo, HwReg::eax, HwReg::eax,
-                             instr.ifi );
+                if ( type_size > 4 ) {
+                    put_reg_reg( AOC::MovIndrFrom64, HwReg::eax, HwReg::eax,
+                                 instr.ifi );
+                } else {
+                    put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax,
+                                 instr.ifi );
+                }
             }
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::FieldWrite ||
@@ -642,24 +648,32 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             size_t type_size = get_type_size(
                 mir, mir.map_to_type_spec[mir.type_of( instr.p1 )] );
             type_size = std::max<size_t>( type_size, 1 ); // No zero alloc
-            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
 
-            auto count_reg = make_available( instr.p0, instr.ifi );
-            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
+            make_available_in( instr.p0, HwReg::eax, instr.ifi );
             // Here instr.result has a special role, as it is also a parameter.
             make_available_in( instr.result, HwReg::edx, instr.ifi );
-            // eax now contains byte offset and edx contains base address.
+            // eax now contains elem-offset and edx contains base address.
 
             // Do bounds checking
             put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
                      instr.ifi );
+            // Later need to reload base address, because edx was overwritten
 
-            // Need to reload base address, because edx will be overwritten
+            // Final address calculation
+            put_reg_imm( AOC::MovConst, HwReg::eax, type_size, instr.ifi );
+            auto count_reg = make_available( instr.p0, instr.ifi );
+            put_reg_reg( AOC::IMul, HwReg::eax, count_reg, instr.ifi );
             auto base_reg = make_available( instr.result, instr.ifi );
             put_reg_reg( AOC::Add64, HwReg::eax, base_reg, instr.ifi );
 
             auto to_store_reg = make_available( instr.p1, instr.ifi );
-            put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg, instr.ifi );
+            if ( type_size > 4 ) {
+                put_reg_reg( AOC::MovIndrTo64, HwReg::eax, to_store_reg,
+                             instr.ifi );
+            } else {
+                put_reg_reg( AOC::MovIndrTo, HwReg::eax, to_store_reg,
+                             instr.ifi );
+            }
         } else if ( instr.type == MT::ReadMem ) {
             make_available_in( instr.p0, HwReg::eax, instr.ifi );
             put_reg_reg( AOC::MovIndrFrom, HwReg::eax, HwReg::eax, instr.ifi );
@@ -811,9 +825,15 @@ void generate_asm_text_x86( CompilerState &state,
         } else if ( op.opcode == AOC::MovSymbolWithRip64 ) {
             put_asm( "movq " + op.str + "(%rip), " + to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::MovIndrTo ) {
-            put_asm( "movq " + to_reg_64_str( op.src ) + ", 0(" +
+            put_asm( "movl " + to_reg_str( op.src ) + ", 0(" +
                      to_reg_64_str( op.dest ) + ")" );
         } else if ( op.opcode == AOC::MovIndrFrom ) {
+            put_asm( "movl 0(" + to_reg_64_str( op.src ) + "), " +
+                     to_reg_str( op.dest ) );
+        } else if ( op.opcode == AOC::MovIndrTo64 ) {
+            put_asm( "movq " + to_reg_64_str( op.src ) + ", 0(" +
+                     to_reg_64_str( op.dest ) + ")" );
+        } else if ( op.opcode == AOC::MovIndrFrom64 ) {
             put_asm( "movq 0(" + to_reg_64_str( op.src ) + "), " +
                      to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::Syscall ) {

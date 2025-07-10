@@ -77,6 +77,16 @@ String Mir::MirInstr::type_name() const {
         return "TypeCast";
     case Mir::MirInstr::Type::FieldRead:
         return "FieldRead";
+    case Mir::MirInstr::Type::FieldWrite:
+        return "FieldWrite";
+    case Mir::MirInstr::Type::IndirectRead:
+        return "IndirectRead";
+    case Mir::MirInstr::Type::IndirectWrite:
+        return "IndirectWrite";
+    case Mir::MirInstr::Type::ArrayRead:
+        return "ArrayRead";
+    case Mir::MirInstr::Type::ArrayWrite:
+        return "ArrayWrite";
     case Mir::MirInstr::Type::ReadMem:
         return "ReadMem";
     case Mir::MirInstr::Type::WriteMem:
@@ -163,6 +173,8 @@ size_t get_struct_size( Mir &mir, SymbolId struct_symbol_id );
 size_t get_type_size( Mir &mir, const TypeSpecifier &type_spec ) {
     if ( type_spec.type == TypeSpecifier::Type::Struct ) {
         return get_struct_size( mir, type_spec.struct_symbol_id->value() );
+    } else if ( type_spec.type == TypeSpecifier::Type::Prim ) {
+        return 4;
     } else {
         return 8;
     }
@@ -508,8 +520,9 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         // Calculate type size
         i32 type_size = get_type_size( mir, TypeSpecifier( itr.get() ) );
         VarId type_size_var = mir.next_var++;
-        mir.instrs.put( MI{ MT::Const, type_size_var, 0, 0, type_size, node.ifi,
-                            ArithType::None, Mir::TYPE_INT } );
+        mir.instrs.put( MI{ MT::Const, type_size_var, 0, 0,
+                            std::max( 8, type_size ), node.ifi, ArithType::None,
+                            Mir::TYPE_INT } );
 
         if ( call.fn_symbol == "alloc" ) {
             auto shr_type_spec = TypeSpecifier::make_pointer_to(
@@ -565,8 +578,12 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             mir.instrs.put(
                 MI{ MT::WriteMem, ptr, tmp_count, 0, 0, node.ifi } );
             VarId shifted_ptr = mir.next_var++;
-            mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_one, 0,
-                                node.ifi, ArithType::Add, Mir::TYPE_ANY } );
+            VarId tmp_eight = mir.next_var++;
+            mir.instrs.put( MI{ MT::Const, tmp_eight, 0, 0, 8, node.ifi,
+                                ArithType::None, Mir::TYPE_INT } );
+            mir.instrs.put( MI{ MT::BinOp, shifted_ptr, ptr, tmp_eight, 0,
+                                node.ifi, ArithType::Add, Mir::TYPE_ANY, "",
+                                true } );
 
             // Cast to requested type
             mir.instrs.put( MI{ MT::TypeCast, into_var, shifted_ptr, 0,
@@ -617,6 +634,11 @@ std::pair<MI *, MI *> get_successors(
     return ret;
 }
 
+bool result_is_actually_param( MT instr_type ) {
+    return instr_type == MT::FieldWrite || instr_type == MT::IndirectWrite ||
+           instr_type == MT::ArrayWrite || instr_type == MT::WriteMem;
+}
+
 void analyze_liveness( CompilerState &state, Mir &mir ) {
     auto none = MI{};
     bool saturated = false;
@@ -641,15 +663,19 @@ void analyze_liveness( CompilerState &state, Mir &mir ) {
             // Parameters need to live
             set_live( instr.p0 );
             set_live( instr.p1 );
+            if ( result_is_actually_param( instr.type ) )
+                set_live( instr.result );
 
-            // Live in successors is transitive, except if its this
+            // Live in successors is transitive, except if it's this
             // instruction's result value.
             for ( auto &v : succ.first->live ) {
-                if ( v != instr.result )
+                if ( v != instr.result ||
+                     result_is_actually_param( instr.type ) )
                     set_live( v );
             }
             for ( auto &v : succ.second->live ) {
-                if ( v != instr.result )
+                if ( v != instr.result ||
+                     result_is_actually_param( instr.type ) )
                     set_live( v );
             }
         }
@@ -703,20 +729,26 @@ void analyze_neededness( CompilerState &state, Mir &mir ) {
                 set_needed( instr.p1 );
                 if ( instr.type == MT::Call )
                     set_fn_args_needed();
+                if ( result_is_actually_param( instr.type ) )
+                    set_needed( instr.result );
             }
             // Transitivity of neededness from successors.
             for ( auto &v : succ.first->needed ) {
-                if ( v != instr.result )
+                if ( v != instr.result ||
+                     result_is_actually_param( instr.type ) )
                     set_needed( v );
-                if ( instr.result != 0 && v == instr.result ) {
+                if ( instr.result != 0 && v == instr.result &&
+                     !result_is_actually_param( instr.type ) ) {
                     set_needed( instr.p0 );
                     set_needed( instr.p1 );
                 }
             }
             for ( auto &v : succ.second->needed ) {
-                if ( v != instr.result )
+                if ( v != instr.result ||
+                     result_is_actually_param( instr.type ) )
                     set_needed( v );
-                if ( instr.result != 0 && v == instr.result ) {
+                if ( instr.result != 0 && v == instr.result &&
+                     !result_is_actually_param( instr.type ) ) {
                     set_needed( instr.p0 );
                     set_needed( instr.p1 );
                 }
@@ -740,7 +772,7 @@ void trim_dead_code( CompilerState &state, Mir &mir ) {
             if ( !has_effect( mir, instr ) ) {
                 // Result is not needed and therefore this line is dead code.
                 to_erase.push_back( itr );
-            } else {
+            } else if ( !result_is_actually_param( instr.type ) ) {
                 // Not needed, but has an effect => don't write back result
                 itr.get().result = 0;
             }
