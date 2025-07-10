@@ -280,8 +280,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     };
 
     // Add preamble
-    auto main_fn_label =
-        get_fn_label( mir, mir.func_map[mir.main_function_symbol].label );
+    auto main_fn_label = get_fn_label( mir, mir.main_function_symbol );
     put_str( AOC::Global, "main", no_ifi );
     put_empty( AOC::Text, no_ifi );
     put_label( "main", no_ifi );
@@ -526,7 +525,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_str( AOC::Jz, "l" + to_string( instr.imm ), instr.ifi );
         } else if ( instr.type == MT::Func ) {
             // Assume clean state for all registers.
-            put_label( get_fn_label( mir, instr.imm ), instr.ifi );
+            put_label( get_fn_label( mir, mir.func_label_to_symbol[instr.imm] ),
+                       instr.ifi );
             curr_fn_info = mir.func_map[mir.func_label_to_symbol[instr.imm]];
             size_t local_bytes = 4 * ( curr_fn_info.max_register_used -
                                        std::min( curr_fn_info.max_register_used,
