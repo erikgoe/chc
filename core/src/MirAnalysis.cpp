@@ -324,6 +324,44 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
             mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
+        } else if ( instr.type == MT::ArrayRead ) {
+            auto arr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
+            if ( arr_ts.type != TypeSpecifier::Type::Array ) {
+                make_error_msg( state,
+                                "Array access on variable, which is "
+                                "not an array.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto idx_ts = mir.map_to_type_spec[mir.type_of( instr.p1 )];
+            if ( idx_ts.type != TypeSpecifier::Type::Prim ||
+                 idx_ts.name != "int" ) {
+                make_error_msg( state,
+                                "Array access not using an integer index.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = mir.map_to_type_id[*arr_ts.sub];
+        } else if ( instr.type == MT::ArrayWrite ) {
+            auto arr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
+            if ( arr_ts.type != TypeSpecifier::Type::Array ) {
+                make_error_msg( state,
+                                "Array access on variable, which is "
+                                "not an array.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            auto idx_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
+            if ( idx_ts.type != TypeSpecifier::Type::Prim ||
+                 idx_ts.name != "int" ) {
+                make_error_msg( state,
+                                "Array access not using an integer index.",
+                                instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            if ( !match_types( mir.type_of( instr.p1 ),
+                               mir.map_to_type_id[*arr_ts.sub], instr.ifi ) )
+                return;
         } else if ( instr.type == MT::ReadMem ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
@@ -333,7 +371,8 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             mir.type_of( instr.result ) = mir.map_to_type_id[*ptr_ts.sub];
-        } else if ( instr.type == MT::WriteMem ) {
+        } else if ( instr.type == MT::WriteMem &&
+                    instr.type_constraint != Mir::TYPE_ANY ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
                 make_error_msg(

@@ -581,8 +581,8 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
                 MI{ MT::Call, ptr, 0, 0, mir.alloc_label, node.ifi } );
 
             // Assign dynamic array size and shift returned pointer
-            mir.instrs.put(
-                MI{ MT::WriteMem, ptr, tmp_count, 0, 0, node.ifi } );
+            mir.instrs.put( MI{ MT::WriteMem, ptr, tmp_count, 0, 0, node.ifi,
+                                ArithType::None, Mir::TYPE_ANY } );
             VarId shifted_ptr = mir.next_var++;
             VarId tmp_eight = mir.next_var++;
             mir.instrs.put( MI{ MT::Const, tmp_eight, 0, 0, 8, node.ifi,
