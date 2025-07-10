@@ -324,6 +324,26 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
             mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
+        } else if ( instr.type == MT::ReadMem ) {
+            auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
+            if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
+                make_error_msg(
+                    state, "Pointer deref on variable, which is not a pointer.",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            mir.type_of( instr.result ) = mir.map_to_type_id[*ptr_ts.sub];
+        } else if ( instr.type == MT::WriteMem ) {
+            auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
+            if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
+                make_error_msg(
+                    state, "Pointer deref on variable, which is not a pointer.",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
+            if ( !match_types( mir.type_of( instr.p0 ),
+                               mir.map_to_type_id[*ptr_ts.sub], instr.ifi ) )
+                return;
         }
     } );
 }
