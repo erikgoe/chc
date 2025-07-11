@@ -230,6 +230,9 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
             auto decl = DeclUninit( itr.get().nodes->itr().get() );
             struct_info.fields.push_back(
                 std::make_pair( decl.type, decl.symbol ) );
+
+            // Touch type at least once
+            spec_to_type( mir, *decl.type );
             itr.skip_self( 1 );
         }
 
