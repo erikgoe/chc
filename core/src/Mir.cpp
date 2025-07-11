@@ -696,6 +696,8 @@ bool has_effect( Mir &mir, Mir::MirInstr &instr ) {
            instr.type == MT::Param || instr.type == MT::Call ||
            instr.type == MT::FieldWrite || instr.type == MT::IndirectWrite ||
            instr.type == MT::ArrayWrite || instr.type == MT::WriteMem ||
+           instr.type == MT::IndirectRead || instr.type == MT::ArrayRead ||
+           instr.type == MT::ReadMem ||
            ( instr.type == MT::BinOp && ( instr.subtype == ArithType::Div ||
                                           instr.subtype == ArithType::Mod ) );
 }
