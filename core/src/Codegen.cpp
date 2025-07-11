@@ -163,8 +163,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         }
 
         // Load from stack first
-        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
-        put_reg_imm( AOC::MovFromStack, HwReg::r10d, addr_offset, ifi );
+        size_t addr_offset = -8 * ( reg - virtual_stack_start_reg + 1 );
+        put_reg_imm( AOC::MovFromStack64, HwReg::r10d, addr_offset, ifi );
         return HwReg::r10d;
     };
     // Copy to register and optionally load from stack
@@ -182,8 +182,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         }
 
         // Load from stack first
-        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
-        put_reg_imm( AOC::MovFromStack, dest_reg, addr_offset, ifi );
+        size_t addr_offset = -8 * ( reg - virtual_stack_start_reg + 1 );
+        put_reg_imm( AOC::MovFromStack64, dest_reg, addr_offset, ifi );
         reg_states[dest_reg].written_to = true;
     };
     // Write back to stack if necessary
@@ -205,8 +205,8 @@ void generate_code_x86( CompilerState &state, const String &original_source,
         }
 
         // Write back to stack
-        size_t addr_offset = -4 * ( reg - virtual_stack_start_reg + 1 );
-        put_src_reg_imm( AOC::MovToStack, src_reg, addr_offset, ifi );
+        size_t addr_offset = -8 * ( reg - virtual_stack_start_reg + 1 );
+        put_src_reg_imm( AOC::MovToStack64, src_reg, addr_offset, ifi );
     };
 
     // Saving register to stack for function calls
@@ -528,7 +528,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_label( get_fn_label( mir, mir.func_label_to_symbol[instr.imm] ),
                        instr.ifi );
             curr_fn_info = mir.func_map[mir.func_label_to_symbol[instr.imm]];
-            size_t local_bytes = 4 * ( curr_fn_info.max_register_used -
+            size_t local_bytes = 8 * ( curr_fn_info.max_register_used -
                                        std::min( curr_fn_info.max_register_used,
                                                  virtual_stack_start_reg ) );
             put_imm( AOC::Enter, local_bytes, instr.ifi );
@@ -538,7 +538,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             save_callee_registers( curr_fn_info.max_register_used, instr.ifi );
         } else if ( instr.type == MT::Param ) {
             size_t addr_offset = 16 + 8 * ( loaded_parm_count++ );
-            put_reg_imm( AOC::MovFromStack, HwReg::eax, addr_offset,
+            put_reg_imm( AOC::MovFromStack64, HwReg::eax, addr_offset,
                          instr.ifi );
             writeback_opt( instr.result, HwReg::eax, instr.ifi );
         } else if ( instr.type == MT::Arg ) {
@@ -848,6 +848,9 @@ void generate_asm_text_x86( CompilerState &state,
                      to_reg_64_str( op.dest ) );
         } else if ( op.opcode == AOC::MovToStack ) {
             put_asm( "movl " + to_reg_str( op.src ) + ", " +
+                     to_string( op.imm ) + "(%rbp)" );
+        } else if ( op.opcode == AOC::MovToStack64 ) {
+            put_asm( "movq " + to_reg_64_str( op.src ) + ", " +
                      to_string( op.imm ) + "(%rbp)" );
         } else if ( op.opcode == AOC::MovZeroExtend ) {
             put_asm( "movzbl %al, %eax" );
