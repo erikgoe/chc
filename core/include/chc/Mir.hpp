@@ -106,15 +106,18 @@ struct Mir {
     static constexpr TypeId TYPE_ANY = 1;
     static constexpr TypeId TYPE_INT = 2;
     static constexpr TypeId TYPE_BOOL = 3;
+    static constexpr TypeId TYPE_NULL = 4;
 
     Mir() {
         map_to_type_id[TypeSpecifier( "" )] = TYPE_ANY;
         map_to_type_id[TypeSpecifier( "int" )] = TYPE_INT;
         map_to_type_id[TypeSpecifier( "bool" )] = TYPE_BOOL;
+        map_to_type_id[*TypeSpecifier::make_null_pointer()] = TYPE_NULL;
         map_to_type_spec[TYPE_ANY] = TypeSpecifier( "" );
         map_to_type_spec[TYPE_INT] = TypeSpecifier( "int" );
         map_to_type_spec[TYPE_BOOL] = TypeSpecifier( "bool" );
-        next_type = TYPE_BOOL + 1;
+        map_to_type_spec[TYPE_NULL] = *TypeSpecifier::make_null_pointer();
+        next_type = TYPE_NULL + 1;
 
         alloc_label = next_label++;
         check_array_label = next_label++;

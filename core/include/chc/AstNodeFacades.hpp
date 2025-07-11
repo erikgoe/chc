@@ -125,6 +125,8 @@ public:
         } else if ( node.type == AstNode::Type::PtrType ) {
             type = Type::Ptr;
             sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
+        } else if ( node.type == AstNode::Type::NullConst ) {
+            type = Type::Nullptr;
         } else if ( node.type == AstNode::Type::ArrayType ) {
             type = Type::Array;
             sub = std::make_shared<TypeSpecifier>( node.nodes->itr().get() );
@@ -138,7 +140,7 @@ public:
     }
     bool operator==( const TypeSpecifier &other ) const {
         return type == other.type && ( !sub || *sub == *other.sub ) &&
-               ( name == other.name || name.empty() || other.name.empty() );
+               name == other.name;
     }
     bool operator!=( const TypeSpecifier &other ) const {
         return !( *this == other );
@@ -147,7 +149,9 @@ public:
         if ( type != other.type )
             return type < other.type;
         if ( type == Type::Prim || type == Type::Struct ) {
-            return name.empty() || name < other.name;
+            return name < other.name;
+        } else if ( type == Type::Nullptr ) {
+            return false;
         } else {
             return *sub < *other.sub;
         }
@@ -157,6 +161,11 @@ public:
         auto ret = std::make_shared<TypeSpecifier>();
         ret->type = Type::Ptr;
         ret->sub = sub;
+        return ret;
+    }
+    static std::shared_ptr<TypeSpecifier> make_null_pointer() {
+        auto ret = std::make_shared<TypeSpecifier>();
+        ret->type = Type::Nullptr;
         return ret;
     }
     static std::shared_ptr<TypeSpecifier> make_array_of(
@@ -174,7 +183,15 @@ public:
         return ret;
     }
 
-    enum class Type { None, Prim, Ptr, Array, Struct, count } type = Type::None;
+    enum class Type {
+        None,
+        Prim,
+        Ptr,
+        Nullptr,
+        Array,
+        Struct,
+        count
+    } type = Type::None;
     std::shared_ptr<TypeSpecifier> sub;
     String name;
     Opt<SymbolId> *struct_symbol_id = nullptr;

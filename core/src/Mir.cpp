@@ -403,9 +403,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( node.type == AT::NullConst ) {
         mir.instrs.put(
             MI{ MT::Const, into_var, 0, 0, 0, node.ifi, ArithType::None,
-                spec_to_type( mir,
-                              *TypeSpecifier::make_pointer_to(
-                                  std::make_shared<TypeSpecifier>( "" ) ) ) } );
+                spec_to_type( mir, *TypeSpecifier::make_null_pointer() ) } );
     } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()

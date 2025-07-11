@@ -115,11 +115,16 @@ void type_checking( CompilerState &state, Mir &mir ) {
     auto match_types = [&]( Mir::TypeId &lhs, Mir::TypeId &rhs,
                             const InFileInfo &ifi, const String &hint = "" ) {
         if ( lhs != rhs ) {
-            if ( lhs == 0 || lhs == Mir::TYPE_ANY ) {
+            const auto &lhs_ts = mir.map_to_type_spec[lhs];
+            const auto &rhs_ts = mir.map_to_type_spec[rhs];
+            if ( lhs == 0 ) {
                 lhs = rhs;
-            } else if ( rhs == 0 || rhs == Mir::TYPE_ANY ) {
+            } else if ( rhs == 0 ) {
                 rhs = lhs;
-            } else {
+            } else if ( !( lhs_ts.type == TypeSpecifier::Type::Ptr &&
+                           rhs_ts.type == TypeSpecifier::Type::Nullptr ) &&
+                        !( rhs_ts.type == TypeSpecifier::Type::Ptr &&
+                           lhs_ts.type == TypeSpecifier::Type::Nullptr ) ) {
                 make_error_msg(
                     state,
                     "Type mismatch" + ( hint != "" ? " (" + hint + ")" : "" ),
@@ -164,16 +169,19 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 RetCode::SemanticError );
                 return;
             }
-            if ( mir.map_to_type_spec[mir.type_of( instr.p0 )].type ==
-                 TypeSpecifier::Type::Ptr ) {
+            auto p0_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
+            auto p1_ts = mir.map_to_type_spec[mir.type_of( instr.p1 )];
+            if ( p0_ts.type == TypeSpecifier::Type::Ptr ||
+                 p0_ts.type == TypeSpecifier::Type::Nullptr ) {
                 if ( instr.subtype != ArithType::Eq &&
                      instr.subtype != ArithType::UnEq ) {
                     make_error_msg( state, "Pointer arithmetic is not allowed.",
                                     instr.ifi, RetCode::SemanticError );
                     return;
                 }
-                if ( mir.map_to_type_spec[mir.type_of( instr.p0 )].sub !=
-                     mir.map_to_type_spec[mir.type_of( instr.p1 )].sub ) {
+                if ( p0_ts.sub != p1_ts.sub &&
+                     p0_ts.type != TypeSpecifier::Type::Nullptr &&
+                     p1_ts.type != TypeSpecifier::Type::Nullptr ) {
                     make_error_msg(
                         state, "Pointer comparison requires type equality.",
                         instr.ifi, RetCode::SemanticError );
