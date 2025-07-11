@@ -281,7 +281,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 instr.ifi, RetCode::SemanticError );
                 return;
             }
-            auto struct_ts = *ptr_ts.sub;
+            auto struct_ts = mir.complete_type_spec( *ptr_ts.sub );
             if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
                 make_error_msg(
                     state,
@@ -312,7 +312,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 instr.ifi, RetCode::SemanticError );
                 return;
             }
-            auto struct_ts = *ptr_ts.sub;
+            auto struct_ts = mir.complete_type_spec( *ptr_ts.sub );
             if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
                 make_error_msg(
                     state,

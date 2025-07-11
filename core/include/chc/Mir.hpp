@@ -82,6 +82,9 @@ struct Mir {
     TypeId next_type = 1;
     std::map<TypeSpecifier, TypeId> map_to_type_id;
     std::map<TypeId, TypeSpecifier> map_to_type_spec;
+    TypeSpecifier &complete_type_spec( const TypeSpecifier &spec ) {
+        return map_to_type_spec[map_to_type_id[spec]];
+    }
 
     i32 next_label = 1;
     i32 alloc_label;
