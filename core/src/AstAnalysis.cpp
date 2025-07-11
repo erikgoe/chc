@@ -12,6 +12,8 @@ using AstItr = EagerContainer<AstNode>::Iterator;
 
 using namespace AstNodeFacades;
 
+Opt<std::reference_wrapper<AstNode>> unwrap_paren( AstNode &node );
+
 struct SymbolStackEntry {
     SymbolId first_symbol;
     std::vector<std::pair<String, SymbolDecl>> symbols;
@@ -465,27 +467,16 @@ void operator_transformation( CompilerState &state, AstNode &root_node ) {
                     node = outer_node;
                     return true;
                 }
-                // TODO delete
-                /*} else if ( auto access = IndirectAccess( node ) ) {
-                    // Translate indirect access into deref + access.
-                    // Inner operation
-                    auto inner_node = AstNode{ AT::PtrDeref };
-                    inner_node.nodes = std::make_shared<AstCont>();
-                    inner_node.nodes->put( *access.lhs );
-                    inner_node.tok = node.tok;
-                    inner_node.ifi = inner_node.tok->ifi;
-
-                    // Outer node
-                    auto outer_node = AstNode{ AT::FieldAccess };
-                    outer_node.nodes = std::make_shared<AstCont>();
-                    outer_node.nodes->put( inner_node );
-                    outer_node.nodes->put( *access.rhs );
-                    outer_node.tok = node.tok;
-                    outer_node.ifi = outer_node.tok->ifi;
-
-                    // Replace
-                    node = outer_node;
-                    return true;*/
+            } else if ( auto access = FieldAccess( node );
+                        access && access.lhs->type == AT::Paren ) {
+                auto elem = chc::unwrap_paren( *access.lhs );
+                if ( elem && elem->get().type == AT::PtrDeref ) {
+                    // Translate deref + access into indirect access.
+                    auto new_lhs = elem->get().nodes->itr().get();
+                    node.nodes->itr().get() = new_lhs;
+                    node.type = AT::IndirectAccess;
+                    return true;
+                }
             } else if ( auto uni_op = UniOp( node ) ) {
                 if ( uni_op.type == ArithType::LNot ) {
                     // Translate logical not into ternary operator.

@@ -115,21 +115,23 @@ void type_checking( CompilerState &state, Mir &mir ) {
     auto match_types = [&]( Mir::TypeId &lhs, Mir::TypeId &rhs,
                             const InFileInfo &ifi, const String &hint = "" ) {
         if ( lhs != rhs ) {
-            const auto &lhs_ts = mir.map_to_type_spec[lhs];
-            const auto &rhs_ts = mir.map_to_type_spec[rhs];
             if ( lhs == 0 ) {
                 lhs = rhs;
             } else if ( rhs == 0 ) {
                 rhs = lhs;
-            } else if ( !( lhs_ts.type == TypeSpecifier::Type::Ptr &&
-                           rhs_ts.type == TypeSpecifier::Type::Nullptr ) &&
-                        !( rhs_ts.type == TypeSpecifier::Type::Ptr &&
-                           lhs_ts.type == TypeSpecifier::Type::Nullptr ) ) {
-                make_error_msg(
-                    state,
-                    "Type mismatch" + ( hint != "" ? " (" + hint + ")" : "" ),
-                    ifi, RetCode::SemanticError );
-                return false;
+            } else {
+                const auto &lhs_ts = mir.map_to_type_spec[lhs];
+                const auto &rhs_ts = mir.map_to_type_spec[rhs];
+                if ( !( lhs_ts.type == TypeSpecifier::Type::Ptr &&
+                        rhs_ts.type == TypeSpecifier::Type::Nullptr ) &&
+                     !( rhs_ts.type == TypeSpecifier::Type::Ptr &&
+                        lhs_ts.type == TypeSpecifier::Type::Nullptr ) ) {
+                    make_error_msg( state,
+                                    "Type mismatch" +
+                                        ( hint != "" ? " (" + hint + ")" : "" ),
+                                    ifi, RetCode::SemanticError );
+                    return false;
+                }
             }
         }
         return true;

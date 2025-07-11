@@ -460,7 +460,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 // Replace with merged token
                 itr.get() =
-                    make_merged_node( AT::FieldAccess, *lhs.tok, { lhs, rhs } );
+                    make_merged_node( AT::FieldAccess, *mid.tok, { lhs, rhs } );
                 return true;
             } else if ( is_expr( lhs ) && mid.type == AT::Token &&
                         mid.tok->content == "->" && rhs.type == AT::Ident ) {
