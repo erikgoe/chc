@@ -248,7 +248,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
             }
             mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
-            mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
+            if ( !match_types( mir.type_of( instr.result ),
+                               mir.map_to_type_id[*field_itr->first.get()],
+                               instr.ifi, "field read" ) )
+                return;
         } else if ( instr.type == MT::FieldWrite ) {
             auto struct_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
             if ( struct_ts.type != TypeSpecifier::Type::Struct ) {
@@ -271,7 +274,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
             }
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
-            mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
+            if ( !match_types( mir.type_of( instr.p0 ),
+                               mir.map_to_type_id[*field_itr->first.get()],
+                               instr.ifi, "field write" ) )
+                return;
         } else if ( instr.type == MT::IndirectRead ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
@@ -302,7 +308,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
             }
             mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
-            mir.type_of( instr.result ) = mir.map_to_type_id[*field_itr->first];
+            if ( !match_types( mir.type_of( instr.result ),
+                               mir.map_to_type_id[*field_itr->first.get()],
+                               instr.ifi, "indirect read" ) )
+                return;
         } else if ( instr.type == MT::IndirectWrite ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
             if ( ptr_ts.type != TypeSpecifier::Type::Ptr ) {
@@ -333,7 +342,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
             }
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
-            mir.type_of( instr.p0 ) = mir.map_to_type_id[*field_itr->first];
+            if ( !match_types( mir.type_of( instr.p0 ),
+                               mir.map_to_type_id[*field_itr->first.get()],
+                               instr.ifi, "indirect write" ) )
+                return;
         } else if ( instr.type == MT::ArrayRead ) {
             auto arr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
             if ( arr_ts.type != TypeSpecifier::Type::Array ) {
@@ -351,7 +363,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
                                 instr.ifi, RetCode::SemanticError );
                 return;
             }
-            mir.type_of( instr.result ) = mir.map_to_type_id[*arr_ts.sub];
+            if ( !match_types( mir.type_of( instr.result ),
+                               mir.map_to_type_id[*arr_ts.sub], instr.ifi,
+                               "array read" ) )
+                return;
         } else if ( instr.type == MT::ArrayWrite ) {
             auto arr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
             if ( arr_ts.type != TypeSpecifier::Type::Array ) {
@@ -370,7 +385,8 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.p1 ),
-                               mir.map_to_type_id[*arr_ts.sub], instr.ifi ) )
+                               mir.map_to_type_id[*arr_ts.sub], instr.ifi,
+                               "array write" ) )
                 return;
         } else if ( instr.type == MT::ReadMem ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.p0 )];
@@ -380,7 +396,10 @@ void type_checking( CompilerState &state, Mir &mir ) {
                     instr.ifi, RetCode::SemanticError );
                 return;
             }
-            mir.type_of( instr.result ) = mir.map_to_type_id[*ptr_ts.sub];
+            if ( !match_types( mir.type_of( instr.result ),
+                               mir.map_to_type_id[*ptr_ts.sub], instr.ifi,
+                               "pointer read" ) )
+                return;
         } else if ( instr.type == MT::WriteMem &&
                     instr.type_constraint != Mir::TYPE_ANY ) {
             auto ptr_ts = mir.map_to_type_spec[mir.type_of( instr.result )];
@@ -391,7 +410,8 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.p0 ),
-                               mir.map_to_type_id[*ptr_ts.sub], instr.ifi ) )
+                               mir.map_to_type_id[*ptr_ts.sub], instr.ifi,
+                               "ptr write" ) )
                 return;
         }
     } );
