@@ -396,6 +396,13 @@ void type_checking( CompilerState &state, Mir &mir ) {
                     instr.ifi, RetCode::SemanticError );
                 return;
             }
+            auto sub_ts = mir.complete_type_spec( *ptr_ts.sub );
+            if ( sub_ts.type == TypeSpecifier::Type::Struct ) {
+                make_error_msg(
+                    state, "Pointer deref on struct instance is not allowed!",
+                    instr.ifi, RetCode::SemanticError );
+                return;
+            }
             if ( !match_types( mir.type_of( instr.result ),
                                spec_to_type( mir, *ptr_ts.sub ), instr.ifi,
                                "pointer read" ) )
