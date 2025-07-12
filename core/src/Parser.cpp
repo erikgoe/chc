@@ -1004,7 +1004,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // Check for Statements in blocks
+    // Check for statements in blocks
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
@@ -1059,6 +1059,32 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         }
                     }
                     block_itr.skip_self( 1 );
+                }
+            }
+            return false;
+        } );
+
+    // Check for direct struct types in function definition heads
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            auto node = itr.get();
+            if ( node.type == AT::FunctionDef ) {
+                auto ret_type = node.nodes->itr().get().nodes->itr().get();
+                auto params = unwrap_comma_list_nodes(
+                    node.nodes->itr().skip( 1 ).get() );
+                if ( ret_type.type == AT::StructType ) {
+                    make_error_msg(
+                        state, "Directly returning a struct is not allowed!",
+                        node.ifi, RetCode::SemanticError );
+                } else if ( params.any( [&]( auto &&n ) {
+                                return n.nodes->itr().get().type ==
+                                       AT::StructType;
+                            } ) ) {
+                    make_error_msg(
+                        state,
+                        "Directly passing a struct parameter is not allowed!",
+                        node.ifi, RetCode::SemanticError );
                 }
             }
             return false;
