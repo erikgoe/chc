@@ -531,7 +531,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             put_label( get_fn_label( mir, mir.func_label_to_symbol[instr.imm] ),
                        instr.ifi );
             curr_fn_info = mir.func_map[mir.func_label_to_symbol[instr.imm]];
-            size_t local_bytes = 8 * ( curr_fn_info.max_register_used -
+            size_t local_bytes = 8 * ( curr_fn_info.max_register_used + 1 -
                                        std::min( curr_fn_info.max_register_used,
                                                  virtual_stack_start_reg ) );
             put_imm( AOC::Enter, local_bytes, instr.ifi );
