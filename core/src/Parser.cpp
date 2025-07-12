@@ -1078,8 +1078,10 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         state, "Directly returning a struct is not allowed!",
                         node.ifi, RetCode::SemanticError );
                 } else if ( params.any( [&]( auto &&n ) {
-                                return n.nodes->itr().get().type ==
-                                       AT::StructType;
+                                return ( n.type == AT::Decl ||
+                                         n.type == AT::DeclUninit ) &&
+                                       n.nodes->itr().get().type ==
+                                           AT::StructType;
                             } ) ) {
                     make_error_msg(
                         state,
