@@ -1021,7 +1021,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
             return false;
         } );
 
-    // Check for Fields in struct definitions
+    // Check for fields in struct definitions
     apply_pass_recursively_from_left(
         state, *root_node.nodes, root_node,
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
@@ -1034,6 +1034,31 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                         make_error_msg(
                             state, "Expected field in struct block.",
                             block_itr.get().ifi, RetCode::SyntaxError );
+                    }
+                    block_itr.skip_self( 1 );
+                }
+            }
+            return false;
+        } );
+
+    // Check for local struct instances
+    apply_pass_recursively_from_left(
+        state, *root_node.nodes, root_node,
+        []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
+            if ( itr.get().type == AT::Block &&
+                 parent.type == AT::FunctionDef ) {
+                auto block_itr = itr.get().nodes->itr();
+                while ( block_itr ) {
+                    if ( block_itr.get().type == AT::Stmt ) {
+                        auto &node = block_itr.get().nodes->itr().get();
+                        if ( ( node.type == AT::Decl ||
+                               node.type == AT::DeclUninit ) &&
+                             node.nodes->itr().get().type == AT::StructType ) {
+                            make_error_msg(
+                                state,
+                                "Local struct instances are not allowed!",
+                                node.ifi, RetCode::SemanticError );
+                        }
                     }
                     block_itr.skip_self( 1 );
                 }
