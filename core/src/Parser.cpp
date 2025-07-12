@@ -370,8 +370,7 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             auto lhs = itr.get();
             auto rhs = itr.skip( 1 ).get_or( ast( AT::None ) );
-            if ( parent.type != AT::GlobalScope &&
-                 itr.match( ast_tok( TT::Keyword, "struct" ),
+            if ( itr.match( ast_tok( TT::Keyword, "struct" ),
                             ast( AT::Ident ) ) ) {
                 // Remove one consumed element.
                 itr.erase_self();
@@ -786,19 +785,18 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
         []( CompilerState &state, AstItr &itr, const AstNode &parent ) {
             if ( parent.type != AT::GlobalScope )
                 return false; // Only allow struct definitions in global scope
-            auto keyword = itr.get();
-            auto head = itr.skip( 1 ).get_or( ast( AT::None ) );
-            auto block = itr.skip( 2 ).get_or( ast( AT::None ) );
-            if ( itr.match( ast_tok( TT::Keyword, "struct" ), ast( AT::Ident ),
-                            ast( AT::Block ), ast_tok( TT::Operator, ";" ) ) ) {
+            auto head = itr.get();
+            auto block = itr.skip( 1 ).get_or( ast( AT::None ) );
+            if ( itr.match( ast( AT::StructType ), ast( AT::Block ),
+                            ast_tok( TT::Operator, ";" ) ) ) {
                 // Is "struct <ident> { ... }"
-                // Remove three consumed elements.
-                itr.erase_self();
+                // Remove two consumed elements.
                 itr.erase_self();
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::StructDef, *head.tok,
-                                              { head, block } );
+                itr.get() =
+                    make_merged_node( AT::StructDef, *head.tok,
+                                      { head.nodes->itr().get(), block } );
                 return true;
             }
             return false;
