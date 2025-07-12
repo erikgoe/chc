@@ -375,7 +375,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     size_t p0_offset = 16;
     put_reg_imm( AOC::MovFromStack64, HwReg::edi, p0_offset, no_ifi );
     put_reg_imm( AOC::MovFromStack64, HwReg::esi, p0_offset + 8, no_ifi );
-    put_reg_imm( AOC::MovConst, HwReg::eax, 0, no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::eax, 1, no_ifi );
     put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edi, no_ifi );
     put_str( AOC::Jnle, "sigabrt", no_ifi );
     put_str( AOC::Call, "calloc", no_ifi );
