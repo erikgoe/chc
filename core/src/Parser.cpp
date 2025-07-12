@@ -468,16 +468,17 @@ AstNode make_parser( CompilerState &state, EagerContainer<Token> &tokens ) {
                 itr.erase_self();
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() = make_merged_node( AT::IndirectAccess, *lhs.tok,
+                itr.get() = make_merged_node( AT::IndirectAccess, *mid.tok,
                                               { lhs, rhs } );
                 return true;
             } else if ( is_expr( lhs ) && mid.type == AT::Bracket ) {
-                // Is "<expr>.<ident>"
+                // Is "<expr>[<expr>]"
                 // Remove one consumed elements.
                 itr.erase_self();
                 // Replace with merged token
-                itr.get() =
-                    make_merged_node( AT::ArrayAccess, *lhs.tok, { lhs, mid } );
+                itr.get() = make_merged_node(
+                    AT::ArrayAccess, lhs.tok.value_or( Token{ TT::None, "" } ),
+                    { lhs, mid } );
                 return true;
             }
             return false;
