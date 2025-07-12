@@ -388,22 +388,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_empty( AOC::Leave, no_ifi );
     put_empty( AOC::Ret, no_ifi );
 
-    // Explicit built-in array check function
-    // Expect an array pointer in rdx and element-index in rax
-    put_comment( "built-in array check", no_ifi );
-    put_label( "fn" + to_string( mir.check_array_label ), no_ifi );
-    put_imm( AOC::Enter, 0, no_ifi );
-    // `size = *(edx-8); if eax>=size || 0>eax { sigabrt }`
-    put_reg_imm( AOC::Sub64Const, HwReg::edx, 8, no_ifi );
-    put_reg_reg( AOC::MovIndrFrom, HwReg::edx, HwReg::edx, no_ifi );
-    put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edx, no_ifi );
-    put_str( AOC::Jnb, "sigabrt", no_ifi );
-    put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
-    put_reg_reg( AOC::Cmp, HwReg::edx, HwReg::eax, no_ifi );
-    put_str( AOC::Jnle, "sigabrt", no_ifi );
-    put_empty( AOC::Leave, no_ifi );
-    put_empty( AOC::Ret, no_ifi );
-
+    // Simple wrapper to call abort
     put_label( "sigabrt", no_ifi );
     put_str( AOC::Call, "abort", no_ifi );
 
@@ -617,8 +602,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // eax now contains elem-offset and edx contains base address.
 
             // Do bounds checking
-            put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
-                     instr.ifi );
+            put_reg_imm( AOC::Sub64Const, HwReg::edx, 8, no_ifi );
+            put_reg_reg( AOC::MovIndrFrom, HwReg::edx, HwReg::edx, no_ifi );
+            put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edx, no_ifi );
+            put_str( AOC::Jnb, "sigabrt", no_ifi );
+            put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
+            put_reg_reg( AOC::Cmp, HwReg::edx, HwReg::eax, no_ifi );
+            put_str( AOC::Jnle, "sigabrt", no_ifi );
             // Later need to reload base address, because edx was overwritten
 
             // Final address calculation
@@ -671,8 +661,13 @@ void generate_code_x86( CompilerState &state, const String &original_source,
             // eax now contains elem-offset and edx contains base address.
 
             // Do bounds checking
-            put_str( AOC::Call, "fn" + to_string( mir.check_array_label ),
-                     instr.ifi );
+            put_reg_imm( AOC::Sub64Const, HwReg::edx, 8, no_ifi );
+            put_reg_reg( AOC::MovIndrFrom, HwReg::edx, HwReg::edx, no_ifi );
+            put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edx, no_ifi );
+            put_str( AOC::Jnb, "sigabrt", no_ifi );
+            put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
+            put_reg_reg( AOC::Cmp, HwReg::edx, HwReg::eax, no_ifi );
+            put_str( AOC::Jnle, "sigabrt", no_ifi );
             // Later need to reload base address, because edx was overwritten
 
             // Final address calculation

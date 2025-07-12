@@ -97,7 +97,6 @@ struct Mir {
 
     i32 next_label = 1;
     i32 alloc_label;
-    i32 check_array_label;
     std::deque<i32> continue_stack;
     std::deque<i32> break_stack;
     TypeId curr_fn_return_type;
@@ -132,7 +131,6 @@ struct Mir {
         next_type = TYPE_NULL + 1;
 
         alloc_label = next_label++;
-        check_array_label = next_label++;
     }
 };
 

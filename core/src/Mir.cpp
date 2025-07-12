@@ -256,11 +256,6 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
         tmp_fn_info.arg_types.push_back( Mir::TYPE_INT );
         tmp_fn_info.arg_types.push_back( Mir::TYPE_INT );
         tmp_fn_info.ret_type = Mir::TYPE_INT;
-        mir.func_label_to_symbol[mir.check_array_label] =
-            semantic_data.next_symbol++;
-        get_func_signature( mir,
-                            mir.func_label_to_symbol[mir.check_array_label] )
-            .label = mir.check_array_label;
 
         // Recurse into definitions
         auto itr = node.nodes->itr();
