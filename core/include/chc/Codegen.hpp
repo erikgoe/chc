@@ -75,7 +75,7 @@ struct Assembly_x86 {
         Jmp,
         Jz,
         Jnb,
-        Jnbe,
+        Jnle,
         Cmp,
         Ret,
         Push,

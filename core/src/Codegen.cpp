@@ -375,6 +375,9 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     size_t p0_offset = 16;
     put_reg_imm( AOC::MovFromStack64, HwReg::edi, p0_offset, no_ifi );
     put_reg_imm( AOC::MovFromStack64, HwReg::esi, p0_offset + 8, no_ifi );
+    put_reg_imm( AOC::MovConst, HwReg::eax, 0, no_ifi );
+    put_reg_reg( AOC::Cmp, HwReg::eax, HwReg::edi, no_ifi );
+    put_str( AOC::Jnle, "sigabrt", no_ifi );
     put_str( AOC::Call, "calloc", no_ifi );
     put_reg( AOC::Pop, HwReg::esi, no_ifi );
     put_reg( AOC::Pop, HwReg::edi, no_ifi );
@@ -397,7 +400,7 @@ void generate_code_x86( CompilerState &state, const String &original_source,
     put_str( AOC::Jnb, "sigabrt", no_ifi );
     put_reg_imm( AOC::MovConst, HwReg::edx, 0, no_ifi );
     put_reg_reg( AOC::Cmp, HwReg::edx, HwReg::eax, no_ifi );
-    put_str( AOC::Jnbe, "sigabrt", no_ifi );
+    put_str( AOC::Jnle, "sigabrt", no_ifi );
     put_empty( AOC::Leave, no_ifi );
     put_empty( AOC::Ret, no_ifi );
 
@@ -909,8 +912,8 @@ void generate_asm_text_x86( CompilerState &state,
             put_asm( "jz " + op.str );
         } else if ( op.opcode == AOC::Jnb ) {
             put_asm( "jnb " + op.str );
-        } else if ( op.opcode == AOC::Jnbe ) {
-            put_asm( "jnbe " + op.str );
+        } else if ( op.opcode == AOC::Jnle ) {
+            put_asm( "jnle " + op.str );
         } else if ( op.opcode == AOC::Cmp ) {
             make_reg_reg_op( "cmp", op );
         } else if ( op.opcode == AOC::Ret ) {
