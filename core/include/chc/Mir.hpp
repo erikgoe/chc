@@ -83,8 +83,17 @@ struct Mir {
     std::map<TypeSpecifier, TypeId> map_to_type_id;
     std::map<TypeId, TypeSpecifier> map_to_type_spec;
     TypeSpecifier &complete_type_spec( const TypeSpecifier &spec ) {
-        return map_to_type_spec[map_to_type_id[spec]];
+        return map_to_type_spec[spec_to_type( spec )];
     }
+    TypeId &spec_to_type( const TypeSpecifier &spec ) {
+        if ( map_to_type_id.find( spec ) == map_to_type_id.end() ) {
+            TypeId id = next_type++;
+            map_to_type_id[spec] = id;
+            map_to_type_spec[id] = spec;
+        }
+        return map_to_type_id[spec];
+    }
+
 
     i32 next_label = 1;
     i32 alloc_label;
@@ -126,8 +135,6 @@ struct Mir {
         check_array_label = next_label++;
     }
 };
-
-Mir::TypeId &spec_to_type( Mir &mir, const TypeSpecifier &spec );
 
 size_t get_type_size( Mir &mir, const TypeSpecifier &type_spec );
 

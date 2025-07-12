@@ -249,7 +249,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
             if ( !match_types( mir.type_of( instr.result ),
-                               spec_to_type( mir, *field_itr->first.get() ),
+                               mir.spec_to_type( *field_itr->first.get() ),
                                instr.ifi, "field read" ) )
                 return;
         } else if ( instr.type == MT::FieldWrite ) {
@@ -275,7 +275,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
             if ( !match_types( mir.type_of( instr.p0 ),
-                               spec_to_type( mir, *field_itr->first.get() ),
+                               mir.spec_to_type( *field_itr->first.get() ),
                                instr.ifi, "field write" ) )
                 return;
         } else if ( instr.type == MT::IndirectRead ) {
@@ -309,7 +309,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.p0] =
                 struct_ts.struct_symbol_id->value();
             if ( !match_types( mir.type_of( instr.result ),
-                               spec_to_type( mir, *field_itr->first.get() ),
+                               mir.spec_to_type( *field_itr->first.get() ),
                                instr.ifi, "indirect read" ) )
                 return;
         } else if ( instr.type == MT::IndirectWrite ) {
@@ -343,7 +343,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
             mir.var_struct_symbols[instr.result] =
                 struct_ts.struct_symbol_id->value();
             if ( !match_types( mir.type_of( instr.p0 ),
-                               spec_to_type( mir, *field_itr->first.get() ),
+                               mir.spec_to_type( *field_itr->first.get() ),
                                instr.ifi, "indirect write" ) )
                 return;
         } else if ( instr.type == MT::ArrayRead ) {
@@ -364,7 +364,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.result ),
-                               spec_to_type( mir, *arr_ts.sub ), instr.ifi,
+                               mir.spec_to_type( *arr_ts.sub ), instr.ifi,
                                "array read" ) )
                 return;
         } else if ( instr.type == MT::ArrayWrite ) {
@@ -385,7 +385,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.p1 ),
-                               spec_to_type( mir, *arr_ts.sub ), instr.ifi,
+                               mir.spec_to_type( *arr_ts.sub ), instr.ifi,
                                "array write" ) )
                 return;
         } else if ( instr.type == MT::ReadMem ) {
@@ -404,7 +404,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.result ),
-                               spec_to_type( mir, *ptr_ts.sub ), instr.ifi,
+                               mir.spec_to_type( *ptr_ts.sub ), instr.ifi,
                                "pointer read" ) )
                 return;
         } else if ( instr.type == MT::WriteMem &&
@@ -417,7 +417,7 @@ void type_checking( CompilerState &state, Mir &mir ) {
                 return;
             }
             if ( !match_types( mir.type_of( instr.p0 ),
-                               spec_to_type( mir, *ptr_ts.sub ), instr.ifi,
+                               mir.spec_to_type( *ptr_ts.sub ), instr.ifi,
                                "ptr write" ) )
                 return;
         }

@@ -98,15 +98,6 @@ String Mir::MirInstr::type_name() const {
     }
 }
 
-Mir::TypeId &spec_to_type( Mir &mir, const TypeSpecifier &spec ) {
-    if ( mir.map_to_type_id.find( spec ) == mir.map_to_type_id.end() ) {
-        TypeId id = mir.next_type++;
-        mir.map_to_type_id[spec] = id;
-        mir.map_to_type_spec[id] = spec;
-    }
-    return mir.map_to_type_id[spec];
-}
-
 // Sift down used for std::make_heap heaps (as standard library does not provide
 // this function). TODO not needed?
 template <typename T>
@@ -213,13 +204,13 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
         auto &fn_info = get_func_signature( mir, fn_def.fn_symbol_id->value() );
 
         // Return type
-        fn_info.ret_type = spec_to_type( mir, *fn_def.type );
+        fn_info.ret_type = mir.spec_to_type( *fn_def.type );
 
         // Params
         auto itr = fn_def.params->itr();
         while ( itr ) {
             auto decl = DeclUninit( itr.get() );
-            fn_info.arg_types.push_back( spec_to_type( mir, *decl.type ) );
+            fn_info.arg_types.push_back( mir.spec_to_type( *decl.type ) );
             itr.skip_self( 1 );
         }
     } else if ( auto struct_def = StructDef( node ) ) {
@@ -234,14 +225,14 @@ void discover_all_signatures( CompilerState &state, Mir &mir,
                 std::make_pair( decl.type, decl.symbol ) );
 
             // Touch type at least once
-            spec_to_type( mir, *decl.type );
+            mir.spec_to_type( *decl.type );
             itr.skip_self( 1 );
         }
 
         // Allocate a new type
         auto type = TypeSpecifier::make_struct_type( struct_def.struct_symbol );
         type->struct_symbol_id = struct_def.struct_symbol_id;
-        spec_to_type( mir, *type );
+        mir.spec_to_type( *type );
 
     } else if ( node.type == AT::GlobalScope ) {
         // Add built-in functions
@@ -333,7 +324,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
             auto decl = DeclUninit( itr.get() );
             if ( decl.symbol_id )
                 mir.var_map[decl.symbol_id->value()] = var;
-            mir.type_of( var ) = spec_to_type( mir, *decl.type );
+            mir.type_of( var ) = mir.spec_to_type( *decl.type );
             itr.skip_self( 1 );
         }
 
@@ -375,11 +366,11 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
         write_mir_instr( state, mir, *decl.init, variable );
-        mir.type_of( variable ) = spec_to_type( mir, *decl.type );
+        mir.type_of( variable ) = mir.spec_to_type( *decl.type );
     } else if ( auto decl = DeclUninit( node ) ) {
         VarId variable = mir.next_var++;
         mir.var_map[decl.symbol_id->value()] = variable;
-        mir.type_of( variable ) = spec_to_type( mir, *decl.type );
+        mir.type_of( variable ) = mir.spec_to_type( *decl.type );
         mir.instrs.put( MI{ MT::Uninit, variable, 0, 0, 0, node.ifi } );
     } else if ( auto ident = Ident( node ) ) {
         VarId variable = mir.var_map[ident.id->value()];
@@ -408,7 +399,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
     } else if ( node.type == AT::NullConst ) {
         mir.instrs.put(
             MI{ MT::Const, into_var, 0, 0, 0, node.ifi, ArithType::None,
-                spec_to_type( mir, *TypeSpecifier::make_null_pointer() ) } );
+                mir.spec_to_type( *TypeSpecifier::make_null_pointer() ) } );
     } else if ( auto stmt = AsnOp( node ) ) {
         assert( stmt.type == ArithType::None ); // Should already be handled in
                                                 // operator_transformation()
@@ -536,7 +527,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         if ( call.fn_symbol == "alloc" ) {
             auto shr_type_spec = TypeSpecifier::make_pointer_to(
                 std::make_shared<TypeSpecifier>( itr.get() ) );
-            auto type_id = spec_to_type( mir, *shr_type_spec );
+            auto type_id = mir.spec_to_type( *shr_type_spec );
 
             // Allocate simply one element.
             VarId count_var = mir.next_var++;
@@ -559,7 +550,7 @@ void write_mir_instr( CompilerState &state, Mir &mir, AstNode &node,
         } else if ( call.fn_symbol == "alloc_array" ) {
             auto shr_type_spec = TypeSpecifier::make_array_of(
                 std::make_shared<TypeSpecifier>( itr.get() ) );
-            auto type_id = spec_to_type( mir, *shr_type_spec );
+            auto type_id = mir.spec_to_type( *shr_type_spec );
 
             // Evaluate element count argument
             VarId tmp_count = mir.next_var++;
