@@ -127,6 +127,8 @@ struct Mir {
     }
 };
 
+Mir::TypeId &spec_to_type( Mir &mir, const TypeSpecifier &spec );
+
 size_t get_type_size( Mir &mir, const TypeSpecifier &type_spec );
 
 size_t get_struct_size( Mir &mir, SymbolId struct_symbol_id );

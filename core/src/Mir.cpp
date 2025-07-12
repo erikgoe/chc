@@ -65,6 +65,8 @@ String Mir::MirInstr::type_name() const {
         return "Jmp";
     case Mir::MirInstr::Type::JZero:
         return "JZero";
+    case Mir::MirInstr::Type::Uninit:
+        return "Uninit";
     case Mir::MirInstr::Type::Func:
         return "Func";
     case Mir::MirInstr::Type::Param:
@@ -96,7 +98,7 @@ String Mir::MirInstr::type_name() const {
     }
 }
 
-Mir::TypeId spec_to_type( Mir &mir, const TypeSpecifier &spec ) {
+Mir::TypeId &spec_to_type( Mir &mir, const TypeSpecifier &spec ) {
     if ( mir.map_to_type_id.find( spec ) == mir.map_to_type_id.end() ) {
         TypeId id = mir.next_type++;
         mir.map_to_type_id[spec] = id;
