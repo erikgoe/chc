@@ -4,7 +4,7 @@ My implementation of a compiler for a C-like language, called L4. This compiler 
 ## Features
 * Well... it compiles the language and outputs x86-64 assembly.
 * Dependency free (except for c++17 standard library and gcc assembler). Yes, everything's written from scratch.
-* What the language supports so far: arithmetic & variables, control flow, functions, and simple I/O.
+* The language supports so far: arithmetic & variables, control flow, functions, structs, pointers, arrays, and simple I/O.
 * Register allocator
 * "Unorthodox" implementation of some features like parsing.
 * Many yet unused opportunities for optimizations ;)
