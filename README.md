@@ -1,5 +1,5 @@
 # Compiler for lecture "Compiler Design"
-My implementation of a compiler for a C-like language, called L4. This compiler was created as submission for the lab exercise of the teaching course "Compiler Design" by André Platzer.
+My implementation of a compiler for a C-like language, called L4 (rather similar to C0). This compiler was created as submission for a lab exercise of the teaching course "Compiler Design" by Prof. André Platzer at KIT.
 
 ## Features
 * Well... it compiles the language and outputs x86-64 assembly.
@@ -10,7 +10,7 @@ My implementation of a compiler for a C-like language, called L4. This compiler 
 * Many yet unused opportunities for optimizations ;)
 
 ## Current state
-In early development. Everything can potentially break. Code is messy at various places.
+The lab ended, so I thing it's done. There are still some TODOs remaining and things can break at unexpected places, but it has been tested pretty well (with an external test case corpus). Some language features (like strings...) are not implemented, simply because the specification does not define them. Also the code might be seen as being messy in some places, but I tried to keep it as simple as possible.
 
 ## Building
 ### Linux
@@ -48,3 +48,4 @@ Then compile it like:
 And finally run it:
 
     ./app
+
